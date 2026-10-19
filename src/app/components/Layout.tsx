@@ -22,15 +22,19 @@ import {
 } from "lucide-react";
 import { Book } from "../data/libraryData";
 import { useAuth } from "../context/AuthContext";
-import {
-  createLoanRecord,
-  getLoanDurationByMemberType,
-  loadLoansForUser,
-  saveLoansForUser,
-  formatLoanDate,
-  getRemainingDays,
-  LoanRecord,
-} from "../utils/loanUtils";
+import { createLoanRecord, getLoanDurationByMemberType, getOutstandingFineForUser, loadLoans, saveLoans, calculateFine, getOverdueDays, getRemainingDays, formatLoanDate } from "../utils/loanUtils";
+import type { LoanRecord } from "../utils/loanUtils";
+import { loanApi } from "../services/loanApi";
+
+// ─── Notification Types ─────────────────────────────────────────────────────
+
+interface NotifItem {
+  id: string;
+  type: "warning" | "overdue";
+  title: string;
+  message: string;
+  loanId: string;
+}
 
 // ─── Toast System ────────────────────────────────────────────────────────────
 
@@ -129,12 +133,12 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
 // ─── Nav ─────────────────────────────────────────────────────────────────────
 
 const navItems = [
-  { to: "/", label: "Beranda", icon: LayoutDashboard },
-  { to: "/books", label: "Menu Buku", icon: BookOpen },
-  { to: "/shelves", label: "Tempat Rak Buku", icon: Library },
-  { to: "/categories", label: "Kategori Buku", icon: Tag },
-  { to: "/loan-info", label: "Waktu Peminjaman", icon: Clock },
-  { to: "/account", label: "Akun Saya", icon: User },
+  { to: "/user", label: "Beranda", icon: LayoutDashboard },
+  { to: "/user/books", label: "Menu Buku", icon: BookOpen },
+  { to: "/user/shelves", label: "Tempat Rak Buku", icon: Library },
+  { to: "/user/categories", label: "Kategori Buku", icon: Tag },
+  { to: "/user/loan-info", label: "Waktu Peminjaman", icon: Clock },
+  { to: "/user/account", label: "Akun Saya", icon: User },
 ];
 
 // ─── Layout ──────────────────────────────────────────────────────────────────
@@ -142,14 +146,49 @@ const navItems = [
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [bookshelf, setBookshelf] = useState<Book[]>([]);
-  const [activeLoans, setActiveLoans] = useState<LoanRecord[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
   const userInitial = user?.namaLengkap?.charAt(0).toUpperCase() ?? "A";
+
+  useEffect(() => {
+    if (!user) { setNotifications([]); return; }
+    const loans = loadLoans().filter((l) => l.userId === user.id && l.status === "Dipinjam");
+    const items: NotifItem[] = [];
+    for (const loan of loans) {
+      const remaining = getRemainingDays(loan.dueDate);
+      if (remaining < 0) {
+        const overdue = getOverdueDays(loan.dueDate);
+        const fine = calculateFine(user.jenisAnggota || "Umum", overdue, loan.isFavorite);
+        items.push({
+          id: `overdue-${loan.id}`,
+          type: "overdue",
+          title: "Terlambat Mengembalikan",
+          message: `"${loan.title}" — Telat ${overdue} hari, denda Rp ${fine.toLocaleString("id-ID")}`,
+          loanId: loan.id,
+        });
+      } else if (remaining <= 3) {
+        const label = remaining === 0 ? "hari ini" : `${remaining} hari lagi`;
+        items.push({
+          id: `near-${loan.id}`,
+          type: "warning",
+          title: "Jatuh Tempo Segera",
+          message: `"${loan.title}" — Jatuh tempo ${label} (${formatLoanDate(loan.dueDate)})`,
+          loanId: loan.id,
+        });
+      }
+    }
+    setNotifications(items);
+  }, [user]);
+
+  const toggleNotif = () => {
+    setNotifOpen((prev) => !prev);
+  };
 
   const showToast = useCallback((type: ToastType, title: string, message?: string) => {
     const id = ++toastIdCounter;
@@ -162,18 +201,13 @@ export function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate("/login");
+    navigate("/select-role");
   };
-
-  useEffect(() => {
-    if (!user) return;
-    setActiveLoans(loadLoansForUser(user.id));
-  }, [user]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      navigate(`/books?search=${encodeURIComponent(searchQuery.trim())}`);
+      navigate(`/user/books?search=${encodeURIComponent(searchQuery.trim())}`);
       setSearchQuery("");
       setSidebarOpen(false);
     }
@@ -235,7 +269,7 @@ export function Layout() {
             <NavLink
               key={to}
               to={to}
-              end={to === "/"}
+              end={to === "/user"}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all group
@@ -302,11 +336,56 @@ export function Layout() {
             </div>
           </form>
 
-          <div className="ml-auto flex items-center gap-2">
-            <button className="relative p-2 rounded-xl text-sky-700 hover:bg-sky-50">
+          <div className="ml-auto flex items-center gap-2 relative">
+            <button
+              onClick={toggleNotif}
+              className="relative p-2 rounded-xl text-sky-700 hover:bg-sky-50"
+              title="Notifikasi"
+            >
               <Bell size={20} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full"></span>
+              {notifications.length > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {notifications.length > 9 ? "9+" : notifications.length}
+                </span>
+              )}
             </button>
+            {notifOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
+                <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-sky-100 z-50 max-h-96 overflow-y-auto">
+                  <div className="px-4 py-3 border-b border-sky-100">
+                    <p className="text-sky-900 text-sm font-bold">Notifikasi</p>
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <Bell size={28} className="text-sky-200 mx-auto mb-2" />
+                      <p className="text-slate-400 text-sm">Tidak ada notifikasi</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-sky-50">
+                      {notifications.map((n) => (
+                        <div key={n.id} className="px-4 py-3 hover:bg-sky-50/50 transition-colors">
+                          <div className="flex items-start gap-3">
+                            {n.type === "overdue" ? (
+                              <AlertCircle size={16} className="text-rose-500 mt-0.5 flex-shrink-0" />
+                            ) : (
+                              <AlertCircle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-semibold ${n.type === "overdue" ? "text-rose-700" : "text-amber-700"}`}>
+                                {n.title}
+                              </p>
+                              <p className="text-slate-500 text-xs mt-0.5">{n.message}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
             <button
               onClick={() => setCartOpen(true)}
               className="relative p-2 rounded-xl text-sky-700 hover:bg-sky-50"
@@ -318,7 +397,7 @@ export function Layout() {
                 </span>
               )}
             </button>
-            <NavLink to="/account">
+            <NavLink to="/user/account">
               <div className="w-9 h-9 ml-1 rounded-full bg-sky-400 flex items-center justify-center text-sky-900 font-bold text-sm cursor-pointer hover:bg-sky-500 transition-colors">
                 {userInitial}
               </div>
@@ -360,7 +439,7 @@ export function Layout() {
                   <p className="text-sky-900 font-semibold mb-1">Rak Masih Kosong</p>
                   <p className="text-slate-500 text-sm">Cari buku di Menu Buku dan tambahkan ke sini.</p>
                   <button
-                    onClick={() => { setCartOpen(false); navigate("/books"); }}
+                    onClick={() => { setCartOpen(false); navigate("/user/books"); }}
                     className="mt-6 text-sky-600 text-sm font-semibold hover:underline"
                   >
                     Mulai Eksplorasi
@@ -401,26 +480,65 @@ export function Layout() {
                   Anda akan meminjam <span className="font-bold text-sky-900">{bookshelf.length} buku</span>.
                 </p>
                 <button
-                  onClick={() => {
-                    if (!user) {
-                      showToast("warning", "Silakan login ulang untuk memproses peminjaman.");
-                      return;
+                  onClick={async () => {
+                    if (user) {
+                      const outstandingFine = getOutstandingFineForUser(user.id);
+                      if (outstandingFine > 0) {
+                        showToast(
+                          "warning",
+                          "Peminjaman tidak dapat diproses",
+                          `Anda masih memiliki denda keterlambatan sebesar Rp ${outstandingFine.toLocaleString("id-ID")}. Silakan lunasi denda terlebih dahulu.`
+                        );
+                        return;
+                      }
+
+                      const duration = getLoanDurationByMemberType(user.jenisAnggota || "Umum");
+                      const newLoans: LoanRecord[] = [];
+
+                      // Coba API dulu
+                      let apiOk = false;
+                      const results = await Promise.allSettled(
+                        bookshelf.map((b) =>
+                          loanApi.create({
+                            userId: user.id,
+                            bookId: b.id,
+                            duration,
+                            userName: user.namaLengkap,
+                            userType: user.jenisAnggota || "Umum",
+                            isFavorite: b.recommended,
+                          })
+                        )
+                      );
+                      results.forEach((r, i) => {
+                        if (r.status === "fulfilled" && r.value) {
+                          newLoans.push(r.value);
+                          apiOk = true;
+                        }
+                      });
+
+                      // Jika API gagal, fallback ke localStorage
+                      if (!apiOk) {
+                        for (const b of bookshelf) {
+                          const rec = createLoanRecord(b, user.id, duration);
+                          rec.userName = user.namaLengkap;
+                          rec.userType = user.jenisAnggota || "Umum";
+                          rec.isFavorite = b.recommended;
+                          newLoans.push(rec);
+                        }
+                      }
+
+                      if (newLoans.length > 0) {
+                        const allLoans = loadLoans();
+                        saveLoans([...allLoans, ...newLoans]);
+                      }
                     }
-
-                    const duration = getLoanDurationByMemberType(user.jenisAnggota);
-                    const newLoans = bookshelf.map((book) => createLoanRecord(book, user.id, duration));
-                    const updatedLoans = [...activeLoans, ...newLoans];
-
-                    saveLoansForUser(user.id, updatedLoans);
-                    setActiveLoans(updatedLoans);
-
                     const count = bookshelf.length;
                     setBookshelf([]);
                     setCartOpen(false);
                     showToast(
                       "confirm",
                       "Peminjaman berhasil dikonfirmasi!",
-                      `${count} buku dipinjam selama ${duration} hari dan akan jatuh tempo sesuai kalender.`
+                      `${count} buku siap diambil di meja layanan perpustakaan.`
                     );
                   }}
                   className="w-full bg-sky-600 text-white py-3 rounded-xl font-bold tracking-wider hover:bg-sky-700 transition-colors"
