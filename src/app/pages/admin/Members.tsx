@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import { Users, Search, Trash2, Mail, ShieldCheck, UserCheck, Clock, Ban } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
 import { authApi } from "../../services/api";
-import { addActivity } from "../../utils/activityHistory";
 
 interface Member {
   id: string | number;
@@ -36,7 +34,6 @@ const statusConfig: Record<string, { label: string; className: string; icon: Rea
 };
 
 export function AdminMembers() {
-  const { user } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -44,20 +41,11 @@ export function AdminMembers() {
     authApi.fetchUsers().then(setMembers);
   }, []);
 
-  const handleDelete = async (memberId: string | number, email: string, nama: string) => {
+  const handleDelete = async (memberId: string | number, email: string) => {
     if (confirm(`Apakah Anda yakin ingin menghapus akun ${email}?`)) {
       const ok = await authApi.deleteUser(Number(memberId));
       if (ok) {
         setMembers((prev) => prev.filter((m) => m.id !== memberId));
-        if (user) {
-          addActivity(
-            user.namaLengkap,
-            user.email,
-            "Anggota",
-            "Hapus",
-            `Menghapus akun anggota "${nama}" (${email})`,
-          );
-        }
       }
     }
   };
@@ -154,7 +142,7 @@ export function AdminMembers() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button
-                        onClick={() => handleDelete(member.id, member.email, member.nama_lengkap || "N/A")}
+                        onClick={() => handleDelete(member.id, member.email)}
                         className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition"
                         title="Hapus Akun"
                       >

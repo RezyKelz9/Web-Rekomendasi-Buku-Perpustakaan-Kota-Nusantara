@@ -25,15 +25,17 @@ import {
   CreditCard,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { loadLoansForUser, saveLoansForUser, formatLoanDate, getRemainingDays, calculateFine, getOverdueDays, LoanRecord } from "../../utils/loanUtils";
+import { formatLoanDate, getRemainingDays, calculateFine, getOverdueDays, DEFAULT_SETTINGS } from "../../utils/loanUtils";
+import type { LoanRecord, LibrarySettings } from "../../utils/loanUtils";
 import { loanApi } from "../../services/loanApi";
+import { ratingApi } from "../../services/ratingApi";
+import { settingsApi } from "../../services/settingsApi";
 import { RatingWidget } from "../../components/RatingWidget";
-import { submitRating, getUserRating } from "../../utils/ratingUtils";
 
 const tabs = ["Profil", "Pinjaman Aktif", "Riwayat", "Pengaturan"];
 
 export function Account() {
-  const { user, logout, changePassword } = useAuth();
+  const { user, logout, changePassword, updateProfile } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("Profil");
@@ -41,6 +43,8 @@ export function Account() {
   const [saved, setSaved] = useState(false);
   const [activeLoansData, setActiveLoansData] = useState<LoanRecord[]>([]);
   const [loanHistory, setLoanHistory] = useState<LoanRecord[]>([]);
+  const [settings, setSettings] = useState<LibrarySettings>(DEFAULT_SETTINGS);
+  const [ratings, setRatings] = useState<Record<string, number>>({});
 
   // Ubah Kata Sandi state
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -50,7 +54,7 @@ export function Account() {
   const [pwSuccess, setPwSuccess] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwError("");
     if (!pwForm.current) { setPwError("Kata sandi lama wajib diisi."); return; }
@@ -59,17 +63,15 @@ export function Account() {
     if (pwForm.newPw !== pwForm.confirm) { setPwError("Konfirmasi kata sandi tidak cocok."); return; }
     if (pwForm.current === pwForm.newPw) { setPwError("Kata sandi baru tidak boleh sama dengan yang lama."); return; }
     setPwLoading(true);
-    setTimeout(() => {
-      const result = changePassword(pwForm.current, pwForm.newPw);
-      if (result.success) {
-        setPwSuccess(result.message);
-        setPwForm({ current: "", newPw: "", confirm: "" });
-        setTimeout(() => { setPwSuccess(""); setShowPasswordForm(false); }, 2000);
-      } else {
-        setPwError(result.message);
-      }
-      setPwLoading(false);
-    }, 400);
+    const result = await changePassword(pwForm.current, pwForm.newPw);
+    if (result.success) {
+      setPwSuccess(result.message);
+      setPwForm({ current: "", newPw: "", confirm: "" });
+      setTimeout(() => { setPwSuccess(""); setShowPasswordForm(false); }, 2000);
+    } else {
+      setPwError(result.message);
+    }
+    setPwLoading(false);
   };
   const [formData, setFormData] = useState({
     namaLengkap: user?.namaLengkap ?? "",
@@ -78,29 +80,35 @@ export function Account() {
     alamat: user?.alamat ?? "",
   });
 
-  useEffect(() => {
+  const loadAccountData = async () => {
     if (!user) return;
-    const loans = loadLoansForUser(user.id);
+    const [loans, librarySettings, ratingList] = await Promise.all([
+      loanApi.list(user.id),
+      settingsApi.fetch(),
+      ratingApi.list(user.id),
+    ]);
+    setSettings(librarySettings);
     setActiveLoansData(loans.filter((loan) => loan.status === "Dipinjam" || loan.status === "Menunggu" || loan.status === "Dikembalikan"));
     setLoanHistory(loans.filter((loan) => loan.status === "Selesai" || loan.status === "Ditolak"));
+    setRatings(
+      ratingList.reduce<Record<string, number>>((acc, rating) => {
+        acc[`LOAN-${rating.loan_id}`] = rating.rating;
+        return acc;
+      }, {})
+    );
+  };
+
+  useEffect(() => {
+    void loadAccountData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const handleReturnBook = async (loanId: string) => {
     if (!user) return;
     const apiId = loanApi.extractNumericId(loanId);
-    await loanApi.updateStatus(apiId, "return");
-    const loans = loadLoansForUser(user.id);
-    const updated = loans.map((l) => {
-      if (l.id === loanId) {
-        const overdue = getOverdueDays(l.dueDate);
-        const fine = calculateFine(user?.jenisAnggota || "Umum", overdue, l.isFavorite);
-        return { ...l, status: "Dikembalikan" as const, fine, paymentStatus: fine > 0 ? "unpaid" as const : "paid" as const, returnDate: new Date().toISOString() };
-      }
-      return l;
-    });
-    saveLoansForUser(user.id, updated);
-    setActiveLoansData(updated.filter((loan) => loan.status === "Dipinjam" || loan.status === "Menunggu" || loan.status === "Dikembalikan"));
-    setLoanHistory(updated.filter((loan) => loan.status === "Selesai" || loan.status === "Ditolak"));
+    const ok = await loanApi.updateStatus(apiId, "return");
+    if (!ok) return;
+    await loadAccountData();
   };
 
   const userInitial = user?.namaLengkap?.charAt(0).toUpperCase() ?? "?";
@@ -110,14 +118,20 @@ export function Account() {
   const totalFines = activeLoansData.reduce((acc, loan) => {
     if (loan.status === "Dipinjam" || loan.status === "Dikembalikan") {
       const overdue = getOverdueDays(loan.dueDate);
-      const fine = calculateFine(user?.jenisAnggota || "Umum", overdue, loan.isFavorite);
+      const fine = calculateFine(user?.jenisAnggota || "Umum", overdue, loan.isFavorite, settings);
       if (loan.status === "Dikembalikan" && loan.paymentStatus === "paid") return acc;
       return acc + fine;
     }
     return acc;
   }, 0);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const result = await updateProfile({
+      namaLengkap: formData.namaLengkap,
+      nomorHP: formData.nomorHP,
+      alamat: formData.alamat,
+    });
+    if (!result.success) return;
     setEditMode(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -405,8 +419,14 @@ export function Account() {
                     <RatingWidget
                       userId={user.id}
                       loanId={loan.id}
-                      initialRating={getUserRating(user.id, loan.id)}
-                      onRate={(rating) => submitRating(user.id, loan.id, rating)}
+                      initialRating={ratings[loan.id] ?? null}
+                      onRate={async (rating) => {
+                        const ok = await ratingApi.submit(loan.id, user.id, rating);
+                        if (ok) {
+                          setRatings((prev) => ({ ...prev, [loan.id]: rating }));
+                          await loadAccountData();
+                        }
+                      }}
                       size={14}
                     />
                   ) : null}

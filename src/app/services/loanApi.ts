@@ -31,27 +31,34 @@ function toLoanRecord(api: ApiLoan): LoanRecord {
     borrowDate: api.borrowed_at,
     dueDate: api.due_at,
     returnDate: api.returned_at || undefined,
-    duration: api.duration,
+    duration: Number(api.duration),
     status: api.status as LoanStatus,
     userName: api.user_name || "",
     userType: api.user_type || "Umum",
-    fine: api.fine,
+    fine: Number(api.fine),
     isFavorite: api.is_favorite,
     paymentStatus: api.payment_status || undefined,
   };
 }
 
+async function listLoans(params: { userId?: string; status?: string; id?: string }): Promise<LoanRecord[]> {
+  const search = new URLSearchParams();
+  if (params.userId) search.set("userId", params.userId);
+  if (params.status) search.set("status", params.status);
+  if (params.id) search.set("id", params.id);
+  const qs = search.toString();
+  const res = await apiClient.get<ApiLoan[]>(`loans/index.php${qs ? `?${qs}` : ""}`);
+  return res.success && res.data ? res.data.map(toLoanRecord) : [];
+}
+
 export const loanApi = {
-  async list(userId?: string, status?: string): Promise<LoanRecord[]> {
-    const params = new URLSearchParams();
-    if (userId) params.set("userId", userId);
-    if (status) params.set("status", status);
-    const qs = params.toString();
-    const res = await apiClient.get<ApiLoan[]>(`loans/index.php${qs ? `?${qs}` : ""}`);
-    if (res.success && res.data) {
-      return res.data.map(toLoanRecord);
-    }
-    return [];
+  list(userId?: string, status?: string): Promise<LoanRecord[]> {
+    return listLoans({ userId, status });
+  },
+
+  async get(id: string): Promise<LoanRecord | null> {
+    const loans = await listLoans({ id });
+    return loans[0] || null;
   },
 
   async create(data: {
@@ -63,10 +70,7 @@ export const loanApi = {
     isFavorite?: boolean;
   }): Promise<LoanRecord | null> {
     const res = await apiClient.post<ApiLoan>("loans/index.php", data);
-    if (res.success && res.data) {
-      return toLoanRecord(res.data);
-    }
-    return null;
+    return res.success && res.data ? toLoanRecord(res.data) : null;
   },
 
   async updateStatus(
@@ -86,7 +90,6 @@ export const loanApi = {
   },
 
   extractNumericId(loanRecordId: string): number {
-    const num = loanRecordId.replace("LOAN-", "");
-    return parseInt(num, 10);
+    return parseInt(loanRecordId.replace("LOAN-", ""), 10);
   },
 };

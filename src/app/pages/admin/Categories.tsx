@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BookOpen, Microscope, Landmark, Baby, TrendingUp,
   Star as StarIcon, Plus, Pencil, Trash2, X, Save,
   AlertTriangle, BookMarked,
 } from "lucide-react";
-import { categories as initialCategories, books, Category } from "../../data/libraryData";
-import { useAuth } from "../../context/AuthContext";
-import { addActivity } from "../../utils/activityHistory";
+import type { Book, Category } from "../../data/libraryData";
+import { fetchCategories, fetchBooks, createCategory, updateCategory, deleteCategory } from "../../services/libraryApi";
 
 /* ── helpers ── */
 const iconMap: Record<string, React.ElementType> = {
@@ -49,7 +48,7 @@ function CategoryFormModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const id = (form as any).id ?? form.name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now();
+    const id = (form as any).id ?? form.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     onSave({ ...form, id } as Category);
   };
 
@@ -194,47 +193,54 @@ function DeleteConfirmModal({
    Main AdminCategories Page
 ════════════════════════════════════════════════════════════════ */
 export function AdminCategories() {
-  const { user } = useAuth();
-  const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | Omit<Category, "id"> | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
 
+  const loadData = async () => {
+    const [categoryData, bookData] = await Promise.all([fetchCategories(), fetchBooks()]);
+    setCategories(categoryData);
+    setBooks(bookData);
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
   const getBooksInCategory = (id: string) => books.filter((b) => b.categoryId === id);
   const totalBooks = books.length;
 
-  const handleSave = (cat: Category) => {
-    const exists = categories.some((c) => c.id === cat.id);
-    setCategories((prev) => {
-      return exists ? prev.map((c) => (c.id === cat.id ? cat : c)) : [...prev, cat];
-    });
-    if (user) {
-      addActivity(
-        user.namaLengkap,
-        user.email,
-        "Kategori",
-        exists ? "Edit" : "Tambah",
-        exists
-          ? `Mengedit kategori "${cat.name}"`
-          : `Menambahkan kategori baru "${cat.name}"`,
-      );
+  const handleSave = async (cat: Category) => {
+    const existing = categories.find((c) => c.id === cat.id);
+    const payload = {
+      dbId: existing?.dbId,
+      kode: cat.id,
+      name: cat.name,
+      color: cat.color,
+      icon: cat.icon,
+      description: cat.description,
+    };
+    if (existing) {
+      const result = await updateCategory(payload);
+      if (!result.success) return;
+      setCategories((prev) => prev.map((c) => (c.id === cat.id ? result.category ?? cat : c)));
+    } else {
+      const result = await createCategory(payload);
+      if (!result.success || !result.category) return;
+      setCategories((prev) => [...prev, result.category as Category]);
     }
+    await loadData();
     setEditingCategory(null);
     setSelectedCategory(null);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deletingCategory) return;
+    const result = await deleteCategory(deletingCategory);
+    if (!result.success) return;
     setCategories((prev) => prev.filter((c) => c.id !== deletingCategory.id));
-    if (user) {
-      addActivity(
-        user.namaLengkap,
-        user.email,
-        "Kategori",
-        "Hapus",
-        `Menghapus kategori "${deletingCategory.name}"`,
-      );
-    }
     setDeletingCategory(null);
     setSelectedCategory(null);
   };

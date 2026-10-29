@@ -1,17 +1,19 @@
 import { useState, useEffect } from "react";
 import { SlidersHorizontal, Shield, Users, Save, CheckCircle2, Heart, Clock } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
-import { addActivity } from "../../utils/activityHistory";
-import { loadSettings, saveSettings, LibrarySettings } from "../../utils/loanUtils";
+import type { LibrarySettings } from "../../utils/loanUtils";
+import { DEFAULT_SETTINGS, settingsApi } from "../../services/settingsApi";
 
 export function AdminSettings() {
-  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [settings, setSettings] = useState<LibrarySettings>(loadSettings);
+  const [settings, setSettings] = useState<LibrarySettings>(DEFAULT_SETTINGS);
 
   useEffect(() => {
-    setSettings(loadSettings());
+    let active = true;
+    void settingsApi.fetch().then((data) => {
+      if (active) setSettings(data);
+    });
+    return () => { active = false; };
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -22,26 +24,16 @@ export function AdminSettings() {
     }));
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setSuccess(false);
-
-    setTimeout(() => {
-      saveSettings(settings);
-      setLoading(false);
+    const result = await settingsApi.save(settings);
+    if (result.success) {
       setSuccess(true);
-      if (user) {
-        addActivity(
-          user.namaLengkap,
-          user.email,
-          "Pengaturan",
-          "Simpan",
-          `Memperbarui ketentuan peminjaman & denda (Umum: ${settings.durasiUmum}h/Rp${settings.dendaUmum}, Pelajar: ${settings.durasiPelajar}h/Rp${settings.dendaPelajar}, Dosen: ${settings.durasiDosen}h/Rp${settings.dendaDosen}, Buku Favorit: Rp${settings.dendaBukuFavorit})`
-        );
-      }
       setTimeout(() => setSuccess(false), 3000);
-    }, 800);
+    }
+    setLoading(false);
   };
 
   const formatRp = (val: number) => `Rp ${val.toLocaleString("id-ID")}`;

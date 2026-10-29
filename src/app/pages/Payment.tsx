@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
 import { QRCodeSVG } from "qrcode.react";
 import { CheckCircle, AlertCircle, ArrowLeft, Loader } from "lucide-react";
-import { loadLoans, saveLoans, LoanRecord } from "../utils/loanUtils";
+import type { LoanRecord } from "../utils/loanUtils";
 import { loanApi } from "../services/loanApi";
-import { checkBackend } from "../services/apiClient";
 
 export function Payment() {
   const { loanId } = useParams();
@@ -17,17 +16,19 @@ export function Payment() {
 
   useEffect(() => {
     if (!loanId) return;
-    const loans = loadLoans();
-    const found = loans.find((l) => l.id === loanId);
-    if (found) {
-      setLoan(found);
-      if (found.paymentStatus === "paid") {
-        setPaid(true);
+    let active = true;
+    void (async () => {
+      const found = await loanApi.get(loanId);
+      if (!active) return;
+      if (found) {
+        setLoan(found);
+        if (found.paymentStatus === "paid") setPaid(true);
+      } else {
+        setError("Peminjaman tidak ditemukan.");
       }
-    } else {
-      setError("Peminjaman tidak ditemukan.");
-    }
-    setLoading(false);
+      setLoading(false);
+    })();
+    return () => { active = false; };
   }, [loanId]);
 
   const handlePay = async () => {
@@ -36,21 +37,12 @@ export function Payment() {
     setError("");
 
     const apiId = loanApi.extractNumericId(loan.id);
-    const backendUp = await checkBackend();
-    if (backendUp) {
-      const ok = await loanApi.updateStatus(apiId, "pay");
-      if (!ok) {
-        setError("Gagal memproses pembayaran.");
-        setPaying(false);
-        return;
-      }
+    const ok = await loanApi.updateStatus(apiId, "pay");
+    if (!ok) {
+      setError("Gagal memproses pembayaran.");
+      setPaying(false);
+      return;
     }
-
-    const loans = loadLoans();
-    const updated = loans.map((l) =>
-      l.id === loan.id ? { ...l, paymentStatus: "paid" as const } : l
-    );
-    saveLoans(updated);
     setLoan((prev) => (prev ? { ...prev, paymentStatus: "paid" } : null));
     setPaid(true);
     setPaying(false);

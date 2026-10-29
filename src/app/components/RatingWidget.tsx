@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 
 interface Props {
@@ -12,6 +12,10 @@ interface Props {
 export function RatingWidget({ userId, loanId, initialRating, onRate, size = 16 }: Props) {
   const [hovered, setHovered] = useState(0);
   const [selected, setSelected] = useState<number>(initialRating ?? 0);
+
+  useEffect(() => {
+    setSelected(initialRating ?? 0);
+  }, [initialRating]);
 
   const handleClick = (value: number) => {
     setSelected(value);

@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { useSearchParams, Link, useOutletContext } from "react-router";
 import {
   Search, BookOpen, Microscope, Landmark, Baby, TrendingUp,
   Star as StarIcon, ChevronRight, ChevronLeft, X, Eye,
   Calendar, Hash, MapPin, Package,
 } from "lucide-react";
-import { categories, shelves, Book } from "../../data/libraryData";
-import { getAvailableBooks } from "../../utils/bookAvailability";
+import type { Book, Category, Shelf } from "../../data/libraryData";
+import { fetchBooks, fetchCategories, fetchShelves } from "../../services/libraryApi";
 
 /* ─── Icon map per category ─────────────────────────────────── */
 const categoryIconMap: Record<string, React.ElementType> = {
@@ -18,9 +18,15 @@ const categoryIconMap: Record<string, React.ElementType> = {
   religion: StarIcon,
 };
 
-/* ─── helpers ────────────────────────────────────────────────── */
-const getCategoryById  = (id: string) => categories.find((c) => c.id === id);
-const getShelfById     = (id: string) => shelves.find((s) => s.id === id);
+/* ─── runtime library data ───────────────────────────────────── */
+const LibraryDataContext = createContext<{ categories: Category[]; shelves: Shelf[] }>({
+  categories: [],
+  shelves: [],
+});
+
+function useLibraryData() {
+  return useContext(LibraryDataContext);
+}
 
 /* ═══════════════════════════════════════════════════════════════
    BookCard  –  Portrait, no border, Uniqlo-style
@@ -34,7 +40,9 @@ function BookCard({
   onSelect: (b: Book) => void;
   width?: number | null;
 }) {
-  const cat = getCategoryById(book.categoryId);
+  const { categories, shelves } = useLibraryData();
+  const cat = categories.find((c) => c.id === book.categoryId);
+  const shelf = shelves.find((s) => s.id === book.shelfId);
   const ratingFull = Math.round(book.rating);
 
   return (
@@ -108,7 +116,7 @@ function BookCard({
         <div className="flex items-center gap-2 pt-0.5">
           <span className="text-slate-300 text-xs line-through">{book.year}</span>
           <span className="text-sky-700 text-sm" style={{ fontWeight: 700 }}>
-            {getShelfById(book.shelfId)?.name}
+            {shelf?.name}
           </span>
           {cat && (
             <span className={`text-xs px-1.5 py-0.5 rounded ${cat.color}`}>
@@ -208,29 +216,27 @@ export function Books() {
   const [searchQuery, setSearchQuery]         = useState(searchParams.get("search") || "");
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
-  const [selectedBook, setSelectedBook]       = useState<ReturnType<typeof getAvailableBooks>[0] | null>(null);
-  const [books, setBooks] = useState(getAvailableBooks());
+  const [selectedBook, setSelectedBook]       = useState<Book | null>(null);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
 
   const { addToBookshelf } = useOutletContext<any>();
 
   useEffect(() => {
-    // Update books on mount and when availability changes
-    setBooks(getAvailableBooks());
-
-    // Listen for storage changes
-    const handleStorageChange = () => {
-      setBooks(getAvailableBooks());
-    };
-    window.addEventListener("storage", handleStorageChange);
-
-    const interval = setInterval(() => {
-      setBooks(getAvailableBooks());
-    }, 3000);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
+    let active = true;
+    void (async () => {
+      const [bookList, categoryList, shelfList] = await Promise.all([
+        fetchBooks(),
+        fetchCategories(),
+        fetchShelves(),
+      ]);
+      if (!active) return;
+      setBooks(bookList);
+      setCategories(categoryList);
+      setShelves(shelfList);
+    })();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -241,7 +247,7 @@ export function Books() {
     }
     const cat = searchParams.get("category");
     if (cat) setSelectedCategory(cat);
-  }, [searchParams]);
+  }, [searchParams, books]);
 
   /* Filtered list for grid/search mode */
   const isFiltered = searchQuery || selectedCategory !== "all" || availabilityFilter !== "all";
@@ -259,6 +265,7 @@ export function Books() {
   });
 
   return (
+    <LibraryDataContext.Provider value={{ categories, shelves }}>
     <div className="bg-white min-h-screen -m-4 lg:-m-8 px-6 lg:px-10 pt-8 pb-16">
 
       {/* ── Page title & search ── */}
@@ -509,10 +516,10 @@ export function Books() {
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded ${getCategoryById(selectedBook.categoryId)?.color}`}
+                      className={`text-xs px-2 py-0.5 rounded ${categories.find((c) => c.id === selectedBook.categoryId)?.color}`}
                       style={{ fontWeight: 600 }}
                     >
-                      {getCategoryById(selectedBook.categoryId)?.name}
+                      {categories.find((c) => c.id === selectedBook.categoryId)?.name}
                     </span>
                   </div>
                   <button
@@ -573,7 +580,7 @@ export function Books() {
                     {
                       icon: MapPin,
                       label: "Lokasi Rak",
-                      value: `${getShelfById(selectedBook.shelfId)?.name} · ${selectedBook.shelfPosition}`,
+                      value: `${shelves.find((s) => s.id === selectedBook.shelfId)?.name} · ${selectedBook.shelfPosition}`,
                     },
                     {
                       icon: Package,
@@ -629,5 +636,6 @@ export function Books() {
         </div>
       )}
     </div>
+    </LibraryDataContext.Provider>
   );
 }

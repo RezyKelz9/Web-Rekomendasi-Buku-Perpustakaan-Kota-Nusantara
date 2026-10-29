@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { CheckCircle2, XCircle, FileText, Search, Heart } from "lucide-react";
-import { loadLoans, saveLoans, LoanRecord, calculateFine, getOverdueDays } from "../../utils/loanUtils";
+import { calculateFine, getOverdueDays, DEFAULT_SETTINGS } from "../../utils/loanUtils";
+import type { LoanRecord, LibrarySettings } from "../../utils/loanUtils";
 import { loanApi } from "../../services/loanApi";
-import { useAuth } from "../../context/AuthContext";
-import { addActivity } from "../../utils/activityHistory";
+import { settingsApi } from "../../services/settingsApi";
 
-const formatDate = (isoStr: string) => {
+const formatDate = (isoStr?: string) => {
   if (!isoStr) return "-";
   try {
     const d = new Date(isoStr);
@@ -16,13 +16,17 @@ const formatDate = (isoStr: string) => {
 };
 
 export function AdminLoans() {
-  const { user } = useAuth();
   const [loans, setLoans] = useState<LoanRecord[]>([]);
+  const [settings, setSettings] = useState<LibrarySettings>(DEFAULT_SETTINGS);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("Semua");
 
   useEffect(() => {
-    setLoans(loadLoans());
+    void (async () => {
+      const [loanData, librarySettings] = await Promise.all([loanApi.list(), settingsApi.fetch()]);
+      setLoans(loanData);
+      setSettings(librarySettings);
+    })();
   }, []);
 
   const loansWithFine = useMemo(() => {
@@ -30,13 +34,13 @@ export function AdminLoans() {
       if (loan.status === "Dipinjam" || loan.status === "Dikembalikan") {
         const overdue = getOverdueDays(loan.dueDate);
         if (overdue > 0) {
-          const computedFine = calculateFine(loan.userType || "Umum", overdue, loan.isFavorite);
+          const computedFine = calculateFine(loan.userType || "Umum", overdue, loan.isFavorite, settings);
           return { ...loan, fine: computedFine };
         }
       }
       return loan;
     });
-  }, [loans]);
+  }, [loans, settings]);
 
   const totalFines = useMemo(() => {
     return loansWithFine.reduce((acc, curr) => acc + (curr.fine || 0), 0);
@@ -53,42 +57,13 @@ export function AdminLoans() {
     if (action === "confirm") {
       const overdue = getOverdueDays(loan.dueDate);
       if (overdue > 0) {
-        fine = calculateFine(loan.userType || "Umum", overdue, loan.isFavorite);
+        fine = calculateFine(loan.userType || "Umum", overdue, loan.isFavorite, settings);
       }
     }
 
-    await loanApi.updateStatus(apiId, apiAction, fine);
-
-    setLoans((prev) => {
-      const next = prev.map((loan) => {
-        if (loan.id === id) {
-          if (action === "approve") {
-            const due = new Date();
-            due.setDate(due.getDate() + (loan.duration || 7));
-            return { ...loan, status: "Dipinjam" as const, dueDate: due.toISOString() };
-          }
-          if (action === "reject") {
-            return { ...loan, status: "Ditolak" as const };
-          }
-          if (action === "confirm") {
-            return { ...loan, status: "Selesai" as const, fine, returnDate: new Date().toISOString() };
-          }
-        }
-        return loan;
-      });
-      saveLoans(next);
-      return next;
-    });
-
-    if (user) {
-      const actionMap: Record<string, { action: "Setujui" | "Tolak" | "Konfirmasi"; desc: string }> = {
-        approve: { action: "Setujui", desc: `Menyetujui peminjaman buku "${loan.title}" oleh ${loan.userName || "Anggota"}` },
-        reject: { action: "Tolak", desc: `Menolak peminjaman buku "${loan.title}" oleh ${loan.userName || "Anggota"}` },
-        confirm: { action: "Konfirmasi", desc: `Mengkonfirmasi pengembalian buku "${loan.title}" dari ${loan.userName || "Anggota"}` },
-      };
-      const { action: act, desc } = actionMap[action];
-      addActivity(user.namaLengkap, user.email, "Peminjaman", act, desc);
-    }
+    const ok = await loanApi.updateStatus(apiId, apiAction, fine);
+    if (!ok) return;
+    setLoans(await loanApi.list());
   };
 
   const filteredLoans = loansWithFine.filter((loan) => {

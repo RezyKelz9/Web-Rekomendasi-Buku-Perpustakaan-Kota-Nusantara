@@ -15,6 +15,7 @@ import {
   X,
   ChevronRight,
   History,
+  Database,
 } from "lucide-react";
 
 const adminNavItems = [
@@ -27,6 +28,7 @@ const adminNavItems = [
   { to: "/admin/reports", label: "Laporan", icon: BarChart },
   { to: "/admin/settings", label: "Pengaturan", icon: Settings },
   { to: "/admin/history", label: "Riwayat", icon: History },
+  { to: "/admin/migrate-local", label: "Migrasi Data Lama", icon: Database },
 ];
 
 export function AdminLayout() {

@@ -3,28 +3,15 @@ import {
   Plus, Pencil, Trash2, UploadCloud, X, Search,
   BookOpen, Save, AlertTriangle, Loader2,
 } from "lucide-react";
-import { categories, shelves, Book } from "../../data/libraryData";
-import { fetchBooksFromApi, createBook, updateBook, deleteBook } from "../../services/libraryApi";
-import { loadBookData, saveBookData } from "../../utils/bookData";
-import { loadLoans } from "../../utils/loanUtils";
-import { useAuth } from "../../context/AuthContext";
-import { addActivity } from "../../utils/activityHistory";
+import type { Book, Category, Shelf } from "../../data/libraryData";
+import { fetchBooksFromApi, fetchCategories, fetchShelves, createBook, updateBook, deleteBook } from "../../services/libraryApi";
+import { loanApi } from "../../services/loanApi";
 
-/* ─── helpers ────────────────────────────────────────────────── */
-const getCategoryById = (id: string) => categories.find((c) => c.id === id);
-const getShelfById = (id: string) => shelves.find((s) => s.id === id);
-
-function getActiveBorrowCount(bookId: string): number {
-  const loans = loadLoans();
-  return loans.filter(
-    (l) => l.bookId === bookId && (l.status === "Dipinjam" || l.status === "Menunggu")
-  ).length;
-}
 const emptyBook: Omit<Book, "id"> = {
   title: "",
   author: "",
-  categoryId: categories[0]?.id ?? "",
-  shelfId: shelves[0]?.id ?? "",
+  categoryId: "",
+  shelfId: "",
   shelfPosition: "",
   cover: "",
   rating: 4.5,
@@ -45,15 +32,18 @@ const emptyBook: Omit<Book, "id"> = {
 function AdminBookCard({
   book,
   borrowCount,
+  categoryName,
+  shelfName,
   onEdit,
   onDelete,
 }: {
   book: Book;
   borrowCount: number;
+  categoryName?: string;
+  shelfName?: string;
   onEdit: (b: Book) => void;
   onDelete: (b: Book) => void;
 }) {
-  const cat = getCategoryById(book.categoryId);
   const ratingFull = Math.round(book.rating);
   const availableStock = Math.max(0, book.stock - borrowCount);
 
@@ -131,11 +121,11 @@ function AdminBookCard({
         {/* shelf info */}
         <div className="flex items-center gap-2 pt-0.5">
           <span className="text-blue-400 text-sm" style={{ fontWeight: 700 }}>
-            {getShelfById(book.shelfId)?.name ?? "-"}
+            {shelfName ?? "-"}
           </span>
-          {cat && (
-            <span className={`text-xs px-1.5 py-0.5 rounded ${cat.color}`}>
-              {cat.name.split(" ")[0]}
+          {categoryName && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">
+              {categoryName.split(" ")[0]}
             </span>
           )}
         </div>
@@ -159,23 +149,32 @@ function AdminBookCard({
 ════════════════════════════════════════════════════════════════ */
 function BookFormModal({
   initial,
+  categories,
+  shelves,
   onClose,
   onSave,
 }: {
   initial: Book | (Omit<Book, "id"> & { id?: string });
+  categories: Category[];
+  shelves: Shelf[];
   onClose: () => void;
-  onSave: (book: Book) => void;
+  onSave: (book: Book) => Promise<{ success: boolean; message?: string }>;
 }) {
   const [form, setForm] = useState<Omit<Book, "id"> & { id?: string }>(initial);
+  const [error, setError] = useState("");
   const isEdit = Boolean(initial.id);
 
-  const set = <K extends keyof Book>(key: K, value: Book[K]) =>
+  const set = <K extends keyof Book>(key: K, value: Book[K]) => {
+    setError("");
     setForm((f) => ({ ...f, [key]: value }));
+  };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     const id = form.id ?? `book-${Date.now()}`;
-    onSave({ ...form, id } as Book);
+    const result = await onSave({ ...form, id } as Book);
+    if (!result.success) setError(result.message ?? "Gagal menyimpan buku.");
   };
 
   return (
@@ -391,6 +390,14 @@ function BookFormModal({
             </label>
           </div>
 
+          {/* Error */}
+          {error && (
+            <div className="flex items-start gap-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm rounded-xl px-4 py-3">
+              <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+              {error}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3 pt-2 border-t border-white/10">
             <button
@@ -470,8 +477,9 @@ function DeleteConfirmModal({
    Main AdminBooks Page
 ════════════════════════════════════════════════════════════════ */
 export function AdminBooks() {
-  const { user } = useAuth();
-  const [books, setBooks] = useState<Book[]>(loadBookData);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -480,29 +488,30 @@ export function AdminBooks() {
   const [borrowCounts, setBorrowCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    fetchBooksFromApi().then((data) => {
-      if (data) {
-        setBooks(data);
-        saveBookData(data);
-      }
+    let active = true;
+    void (async () => {
+      const [bookData, categoryData, shelfData, loans] = await Promise.all([
+        fetchBooksFromApi(),
+        fetchCategories(),
+        fetchShelves(),
+        loanApi.list(),
+      ]);
+      if (!active) return;
+      setBooks(bookData ?? []);
+      setCategories(categoryData);
+      setShelves(shelfData);
+      setBorrowCounts(
+        loans.reduce<Record<string, number>>((counts, loan) => {
+          if (loan.status === "Dipinjam" || loan.status === "Menunggu") {
+            counts[loan.bookId] = (counts[loan.bookId] || 0) + 1;
+          }
+          return counts;
+        }, {})
+      );
       setLoading(false);
-    });
+    })();
+    return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    const counts: Record<string, number> = {};
-    const loans = loadLoans();
-    loans.forEach((l) => {
-      if (l.status === "Dipinjam" || l.status === "Menunggu") {
-        counts[l.bookId] = (counts[l.bookId] || 0) + 1;
-      }
-    });
-    setBorrowCounts(counts);
-  }, [books]);
-
-  useEffect(() => {
-    if (!loading) saveBookData(books);
-  }, [books, loading]);
 
   const filtered = books.filter((book) => {
     const matchSearch =
@@ -512,46 +521,31 @@ export function AdminBooks() {
     return matchSearch && matchCategory;
   });
 
-  const handleSave = async (book: Book) => {
+  const handleSave = async (book: Book): Promise<{ success: boolean; message?: string }> => {
     const exists = books.some((b) => b.id === book.id);
     if (exists) {
-      setBooks((prev) => prev.map((b) => (b.id === book.id ? book : b)));
-      await updateBook(book);
-    } else {
-      const tempId = `temp-${Date.now()}`;
-      setBooks((prev) => [{ ...book, id: tempId }, ...prev]);
-      const created = await createBook(book);
-      if (created) {
-        setBooks((prev) => prev.map((b) => (b.id === tempId ? created : b)));
+      const result = await updateBook(book);
+      if (!result.success) {
+        return { success: false, message: result.message || "Gagal menyimpan perubahan." };
       }
-    }
-    if (user) {
-      addActivity(
-        user.namaLengkap,
-        user.email,
-        "Buku",
-        exists ? "Edit" : "Tambah",
-        exists
-          ? `Mengedit buku "${book.title}" oleh ${book.author}`
-          : `Menambahkan buku baru "${book.title}" oleh ${book.author}`,
-      );
+      setBooks((prev) => prev.map((b) => (b.id === book.id ? result.book ?? book : b)));
+    } else {
+      const { id: _ignored, ...payload } = book;
+      const result = await createBook(payload);
+      if (!result.success || !result.book) {
+        return { success: false, message: result.message || "Gagal menambahkan buku." };
+      }
+      setBooks((prev) => [result.book as Book, ...prev]);
     }
     setEditingBook(null);
+    return { success: true };
   };
 
   const handleDelete = async () => {
     if (!deletingBook) return;
+    const result = await deleteBook(deletingBook.id);
+    if (!result.success) return;
     setBooks((prev) => prev.filter((b) => b.id !== deletingBook.id));
-    await deleteBook(deletingBook.id);
-    if (user) {
-      addActivity(
-        user.namaLengkap,
-        user.email,
-        "Buku",
-        "Hapus",
-        `Menghapus buku "${deletingBook.title}" dari katalog`,
-      );
-    }
     setDeletingBook(null);
   };
 
@@ -634,6 +628,8 @@ export function AdminBooks() {
               key={book.id}
               book={book}
               borrowCount={borrowCounts[book.id] || 0}
+              categoryName={categories.find((c) => c.id === book.categoryId)?.name}
+              shelfName={shelves.find((s) => s.id === book.shelfId)?.name}
               onEdit={setEditingBook}
               onDelete={setDeletingBook}
             />
@@ -645,6 +641,8 @@ export function AdminBooks() {
       {editingBook && (
         <BookFormModal
           initial={editingBook}
+          categories={categories}
+          shelves={shelves}
           onClose={() => setEditingBook(null)}
           onSave={handleSave}
         />

@@ -23,6 +23,7 @@ import { AdminCategories } from "./pages/admin/Categories";
 import { AdminReports } from "./pages/admin/Reports";
 import { AdminSettings } from "./pages/admin/Settings";
 import { AdminHistory } from "./pages/admin/History";
+import { MigrateLocal } from "./pages/admin/MigrateLocal";
 
 export const router = createBrowserRouter([
   { path: "/", element: <Navigate to="/select-role" replace /> },
@@ -77,6 +78,7 @@ export const router = createBrowserRouter([
               { path: "reports", Component: AdminReports },
               { path: "settings", Component: AdminSettings },
               { path: "history", Component: AdminHistory },
+              { path: "migrate-local", Component: MigrateLocal },
             ],
           },
         ],

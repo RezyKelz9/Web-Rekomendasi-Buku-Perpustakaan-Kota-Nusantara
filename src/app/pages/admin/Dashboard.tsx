@@ -1,7 +1,10 @@
 import { BookOpen, Users, Book, AlertTriangle, BarChart3, Clock, TrendingUp, Banknote } from "lucide-react";
-import { loadLoans, getRemainingDays, calculateFine, getOverdueDays } from "../../utils/loanUtils";
-import { books as staticBooks, categories } from "../../data/libraryData";
+import { getRemainingDays, calculateFine, getOverdueDays } from "../../utils/loanUtils";
+import type { Category } from "../../data/libraryData";
 import { authApi } from "../../services/api";
+import { fetchBooks, fetchCategories } from "../../services/libraryApi";
+import { loanApi } from "../../services/loanApi";
+import { settingsApi } from "../../services/settingsApi";
 import { useEffect, useState } from "react";
 
 interface NotifItem {
@@ -23,16 +26,24 @@ export function AdminDashboard() {
   const [popularCategory, setPopularCategory] = useState("Belum ada data");
   const [loanTrend, setLoanTrend] = useState("Belum ada data");
   const [catCounts, setCatCounts] = useState<Record<string, number>>({});
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [totalBooks, setTotalBooks] = useState(0);
 
   useEffect(() => {
     (async () => {
     try {
-      const users = await authApi.fetchUsers();
+      const [users, loans, allBooks, categoryData, settings] = await Promise.all([
+        authApi.fetchUsers(),
+        loanApi.list(),
+        fetchBooks(),
+        fetchCategories(),
+        settingsApi.fetch(),
+      ]);
       const memberCount = users.filter((u: any) => u.role === "member").length;
-      const loans = loadLoans();
-      const allBooks = staticBooks;
+      setCategories(categoryData);
 
       const totalBuku = allBooks.length;
+      setTotalBooks(totalBuku);
       const dipinjam = loans.filter((l) => l.status === "Dipinjam" || l.status === "Dikembalikan").length;
       const terlambat = loans.filter(
         (l) => (l.status === "Dipinjam" || l.status === "Dikembalikan") && getRemainingDays(l.dueDate) < 0
@@ -41,14 +52,14 @@ export function AdminDashboard() {
       const computedTotalFines = loans.reduce((acc, l) => {
         if (l.status === "Dipinjam" || l.status === "Dikembalikan") {
           const overdue = getOverdueDays(l.dueDate);
-          return acc + calculateFine(l.userType || "Umum", overdue, l.isFavorite);
+          return acc + calculateFine(l.userType || "Umum", overdue, l.isFavorite, settings);
         }
         return acc;
       }, 0);
       setTotalFines(computedTotalFines);
 
       const counts: Record<string, number> = {};
-      categories.forEach((c) => { counts[c.id] = 0; });
+      categoryData.forEach((c) => { counts[c.id] = 0; });
       allBooks.forEach((b) => { counts[b.categoryId] = (counts[b.categoryId] || 0) + 1; });
       setCatCounts(counts);
 
@@ -141,7 +152,7 @@ export function AdminDashboard() {
           topCatId = catId;
         }
       });
-      const topCat = categories.find((c) => c.id === topCatId);
+      const topCat = categoryData.find((c) => c.id === topCatId);
       setPopularCategory(topCat ? `${topCat.name} (${maxCat}x)` : "Belum ada data");
 
       // Loan trend
@@ -282,7 +293,7 @@ export function AdminDashboard() {
                   <div className="flex-1 h-3 rounded-full bg-slate-800 overflow-hidden">
                     <div
                       className={`h-full rounded-full ${cat.color.split(" ")[0]}`}
-                      style={{ width: `${(count / staticBooks.length) * 100}%` }}
+                      style={{ width: `${totalBooks > 0 ? (count / totalBooks) * 100 : 0}%` }}
                     />
                   </div>
                   <span className="text-sm text-slate-400 w-8 text-right">{count}</span>

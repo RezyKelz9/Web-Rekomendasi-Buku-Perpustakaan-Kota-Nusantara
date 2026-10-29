@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { BarChart3, TrendingUp, BookOpen, Users } from "lucide-react";
 import { Bar, BarChart, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer } from "recharts";
-import { loadLoans } from "../../utils/loanUtils";
-import { books as staticBooks, categories } from "../../data/libraryData";
+import { loanApi } from "../../services/loanApi";
+import { fetchBooks, fetchCategories } from "../../services/libraryApi";
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
@@ -19,7 +19,12 @@ export function AdminReports() {
   const [totalLoans, setTotalLoans] = useState(0);
 
   useEffect(() => {
-    const allLoans = loadLoans();
+    void (async () => {
+    const [allLoans, staticBooks, categories] = await Promise.all([
+      loanApi.list(),
+      fetchBooks(),
+      fetchCategories(),
+    ]);
     const loans = allLoans.filter((l) => l.status !== "Ditolak");
     setTotalLoans(loans.length);
 
@@ -83,6 +88,7 @@ export function AdminReports() {
       const arrow = pct >= 0 ? "Naik" : "Turun";
       setTrend({ text: `${arrow} ${Math.abs(pct)}%`, sub: "Dibanding bulan lalu" });
     }
+    })();
   }, []);
 
   return (

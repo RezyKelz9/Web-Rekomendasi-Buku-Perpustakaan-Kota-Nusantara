@@ -1,29 +1,66 @@
 const API_BASE =
-  import.meta.env.VITE_API_URL || "http://localhost/perpustakaan-api/api";
+  import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
-interface ApiResponse<T = unknown> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   message?: string;
+  user?: T;
 }
 
 let backendAvailable: boolean | null = null;
 
-function getAuthToken(): string | null {
+const SESSION_KEY = "perpus_session";
+
+const AUTH_CHANNEL = "perpus-auth";
+let authChannel: BroadcastChannel | null = null;
+
+function getAuthChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === "undefined") return null;
+  if (!authChannel) authChannel = new BroadcastChannel(AUTH_CHANNEL);
+  return authChannel;
+}
+
+export function broadcastLogout(token: string | null | undefined) {
+  if (!token) return;
+  getAuthChannel()?.postMessage({ type: "logout", token });
+}
+
+export function onAuthBroadcast(
+  handler: (msg: { type: string; token?: string }) => void
+): () => void {
+  const ch = getAuthChannel();
+  if (!ch) return () => {};
+  const listener = (ev: MessageEvent) => handler(ev.data);
+  ch.addEventListener("message", listener);
+  return () => ch.removeEventListener("message", listener);
+}
+
+export function getSessionUser<T = Record<string, unknown>>(): T | null {
   try {
-    const session = localStorage.getItem("perpus_session");
-    if (session) {
-      const user = JSON.parse(session);
-      return user.authToken || null;
-    }
-  } catch {}
-  return null;
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSession(user: unknown) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+}
+
+export function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+function getAuthToken(): string | null {
+  const user = getSessionUser<{ authToken?: string }>();
+  return user?.authToken || null;
 }
 
 export async function checkBackend(): Promise<boolean> {
-  if (backendAvailable !== null) return backendAvailable;
   try {
-    const res = await fetch(`${API_BASE}/books/index.php`, {
+    const res = await fetch(`${API_BASE}/health`, {
       method: "GET",
       signal: AbortSignal.timeout(3000),
     });
@@ -47,23 +84,26 @@ async function request<T>(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = getAuthToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const config: RequestInit = {
-    headers,
-    ...options,
-  };
 
   try {
-    const res = await fetch(url, config);
-    const json = await res.json();
-    return json as ApiResponse<T>;
+    const res = await fetch(url, {
+      ...options,
+      headers: { ...headers, ...(options.headers as Record<string, string> | undefined) },
+    });
+    const json = (await res.json()) as ApiResponse<T>;
+    if (res.status === 401) {
+      clearSession();
+      broadcastLogout(token);
+      window.dispatchEvent(new CustomEvent("perpus:unauthorized"));
+    }
+    return json;
   } catch {
-    return { success: false, message: "Gagal terhubung ke server." };
+    return { success: false, message: "Gagal terhubung ke server PostgreSQL." };
   }
 }
 
 export const apiClient = {
-  get: <T>(endpoint: string) =>
-    request<T>(endpoint, { method: "GET" }),
+  get: <T>(endpoint: string) => request<T>(endpoint, { method: "GET" }),
 
   post: <T>(endpoint: string, data: unknown) =>
     request<T>(endpoint, {
@@ -83,7 +123,6 @@ export const apiClient = {
       body: data ? JSON.stringify(data) : undefined,
     }),
 
-  /** For login endpoint (no auth token needed) */
   postPublic: <T>(endpoint: string, data: unknown) =>
     request<T>(endpoint, {
       method: "POST",

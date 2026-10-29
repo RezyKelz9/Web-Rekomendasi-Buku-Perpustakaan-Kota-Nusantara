@@ -30,7 +30,7 @@ export function Login() {
     }
     setLoading(true);
     setTimeout(async () => {
-      const result = await login(form.email, form.password, "member");
+      const result = await login(form.email, form.password, selectedRole === "admin" ? "admin" : "member");
       if (result.success && result.role) {
         if (selectedRole === "admin" && result.role !== "admin") {
           setError("Akun ini bukan admin. Pilih role User atau gunakan akun admin.");

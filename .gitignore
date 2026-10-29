@@ -32,3 +32,6 @@ graphify-out/
 *.tmp
 *.bak
 ~$*
+
+# Log sesi lokal (tidak untuk publikasi)
+Web perpus_digital.md

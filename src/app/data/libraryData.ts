@@ -1,5 +1,6 @@
 export type Category = {
   id: string;
+  dbId?: number;
   name: string;
   color: string;
   icon: string;
@@ -9,6 +10,7 @@ export type Category = {
 
 export type Shelf = {
   id: string;
+  dbId?: number;
   name: string;
   location: string;
   floor: number;
@@ -30,6 +32,7 @@ export type Book = {
   pages: number;
   isbn: string;
   available: boolean;
+  availableStock?: number;
   stock: number;
   description: string;
   publisher: string;

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import type { ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 import {
   BookOpen,
@@ -22,9 +23,9 @@ import {
 } from "lucide-react";
 import { Book } from "../data/libraryData";
 import { useAuth } from "../context/AuthContext";
-import { createLoanRecord, getLoanDurationByMemberType, getOutstandingFineForUser, loadLoans, saveLoans, calculateFine, getOverdueDays, getRemainingDays, formatLoanDate } from "../utils/loanUtils";
-import type { LoanRecord } from "../utils/loanUtils";
+import { getLoanDurationByMemberType, calculateFine, getOverdueDays, getRemainingDays, formatLoanDate } from "../utils/loanUtils";
 import { loanApi } from "../services/loanApi";
+import { settingsApi } from "../services/settingsApi";
 
 // ─── Notification Types ─────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
     return () => { clearTimeout(showTimer); clearTimeout(hideTimer); };
   }, [toast.id, toast.type, onDismiss]);
 
-  const styles: Record<ToastType, { bg: string; border: string; icon: JSX.Element }> = {
+  const styles: Record<ToastType, { bg: string; border: string; icon: ReactNode }> = {
     success: {
       bg: "bg-white",
       border: "border-sky-200",
@@ -151,6 +152,7 @@ export function Layout() {
   const [bookshelf, setBookshelf] = useState<Book[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
+  const [loansVersion, setLoansVersion] = useState(0);
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
@@ -158,33 +160,41 @@ export function Layout() {
 
   useEffect(() => {
     if (!user) { setNotifications([]); return; }
-    const loans = loadLoans().filter((l) => l.userId === user.id && l.status === "Dipinjam");
-    const items: NotifItem[] = [];
-    for (const loan of loans) {
-      const remaining = getRemainingDays(loan.dueDate);
-      if (remaining < 0) {
-        const overdue = getOverdueDays(loan.dueDate);
-        const fine = calculateFine(user.jenisAnggota || "Umum", overdue, loan.isFavorite);
-        items.push({
-          id: `overdue-${loan.id}`,
-          type: "overdue",
-          title: "Terlambat Mengembalikan",
-          message: `"${loan.title}" — Telat ${overdue} hari, denda Rp ${fine.toLocaleString("id-ID")}`,
-          loanId: loan.id,
-        });
-      } else if (remaining <= 3) {
-        const label = remaining === 0 ? "hari ini" : `${remaining} hari lagi`;
-        items.push({
-          id: `near-${loan.id}`,
-          type: "warning",
-          title: "Jatuh Tempo Segera",
-          message: `"${loan.title}" — Jatuh tempo ${label} (${formatLoanDate(loan.dueDate)})`,
-          loanId: loan.id,
-        });
+    let active = true;
+    void (async () => {
+      const [loans, librarySettings] = await Promise.all([
+        loanApi.list(user.id),
+        settingsApi.fetch(),
+      ]);
+      if (!active) return;
+      const items: NotifItem[] = [];
+      for (const loan of loans.filter((l) => l.status === "Dipinjam")) {
+        const remaining = getRemainingDays(loan.dueDate);
+        if (remaining < 0) {
+          const overdue = getOverdueDays(loan.dueDate);
+          const fine = calculateFine(user.jenisAnggota || "Umum", overdue, loan.isFavorite, librarySettings);
+          items.push({
+            id: `overdue-${loan.id}`,
+            type: "overdue",
+            title: "Terlambat Mengembalikan",
+            message: `"${loan.title}" — Telat ${overdue} hari, denda Rp ${fine.toLocaleString("id-ID")}`,
+            loanId: loan.id,
+          });
+        } else if (remaining <= 3) {
+          const label = remaining === 0 ? "hari ini" : `${remaining} hari lagi`;
+          items.push({
+            id: `near-${loan.id}`,
+            type: "warning",
+            title: "Jatuh Tempo Segera",
+            message: `"${loan.title}" — Jatuh tempo ${label} (${formatLoanDate(loan.dueDate)})`,
+            loanId: loan.id,
+          });
+        }
       }
-    }
-    setNotifications(items);
-  }, [user]);
+      setNotifications(items);
+    })();
+    return () => { active = false; };
+  }, [user, loansVersion]);
 
   const toggleNotif = () => {
     setNotifOpen((prev) => !prev);
@@ -481,65 +491,53 @@ export function Layout() {
                 </p>
                 <button
                   onClick={async () => {
-                    if (user) {
-                      const outstandingFine = getOutstandingFineForUser(user.id);
-                      if (outstandingFine > 0) {
-                        showToast(
-                          "warning",
-                          "Peminjaman tidak dapat diproses",
-                          `Anda masih memiliki denda keterlambatan sebesar Rp ${outstandingFine.toLocaleString("id-ID")}. Silakan lunasi denda terlebih dahulu.`
-                        );
-                        return;
-                      }
-
-                      const duration = getLoanDurationByMemberType(user.jenisAnggota || "Umum");
-                      const newLoans: LoanRecord[] = [];
-
-                      // Coba API dulu
-                      let apiOk = false;
-                      const results = await Promise.allSettled(
-                        bookshelf.map((b) =>
-                          loanApi.create({
-                            userId: user.id,
-                            bookId: b.id,
-                            duration,
-                            userName: user.namaLengkap,
-                            userType: user.jenisAnggota || "Umum",
-                            isFavorite: b.recommended,
-                          })
-                        )
+                    if (!user) return;
+                    const [currentLoans, librarySettings] = await Promise.all([
+                      loanApi.list(user.id),
+                      settingsApi.fetch(),
+                    ]);
+                    const outstandingFine = currentLoans
+                      .filter((loan) => loan.paymentStatus !== "paid" && loan.fine > 0)
+                      .reduce((sum, loan) => sum + loan.fine, 0);
+                    if (outstandingFine > 0) {
+                      showToast(
+                        "warning",
+                        "Peminjaman tidak dapat diproses",
+                        `Anda masih memiliki denda keterlambatan sebesar Rp ${outstandingFine.toLocaleString("id-ID")}. Silakan lunasi denda terlebih dahulu.`
                       );
-                      results.forEach((r, i) => {
-                        if (r.status === "fulfilled" && r.value) {
-                          newLoans.push(r.value);
-                          apiOk = true;
-                        }
-                      });
-
-                      // Jika API gagal, fallback ke localStorage
-                      if (!apiOk) {
-                        for (const b of bookshelf) {
-                          const rec = createLoanRecord(b, user.id, duration);
-                          rec.userName = user.namaLengkap;
-                          rec.userType = user.jenisAnggota || "Umum";
-                          rec.isFavorite = b.recommended;
-                          newLoans.push(rec);
-                        }
-                      }
-
-                      if (newLoans.length > 0) {
-                        const allLoans = loadLoans();
-                        saveLoans([...allLoans, ...newLoans]);
-                      }
+                      return;
                     }
-                    const count = bookshelf.length;
+
+                    const duration = getLoanDurationByMemberType(user.jenisAnggota || "Umum", librarySettings);
+                    const results = await Promise.allSettled(
+                      bookshelf.map((b) =>
+                        loanApi.create({
+                          userId: user.id,
+                          bookId: b.id,
+                          duration,
+                          userName: user.namaLengkap,
+                          userType: user.jenisAnggota || "Umum",
+                          isFavorite: b.recommended,
+                        })
+                      )
+                    );
+                    const created = results.filter((r) => r.status === "fulfilled" && r.value).length;
+                    if (created === 0) {
+                      showToast("warning", "Peminjaman gagal", "Server tidak dapat memproses permintaan pinjaman.");
+                      return;
+                    }
+                    if (created < bookshelf.length) {
+                      showToast("warning", "Sebagian peminjaman gagal", `${created} dari ${bookshelf.length} buku berhasil diajukan.`);
+                    } else {
+                      showToast(
+                        "confirm",
+                        "Peminjaman berhasil dikonfirmasi!",
+                        `${created} buku siap diambil di meja layanan perpustakaan.`
+                      );
+                    }
                     setBookshelf([]);
                     setCartOpen(false);
-                    showToast(
-                      "confirm",
-                      "Peminjaman berhasil dikonfirmasi!",
-                      `${count} buku siap diambil di meja layanan perpustakaan.`
-                    );
+                    setLoansVersion((v) => v + 1);
                   }}
                   className="w-full bg-sky-600 text-white py-3 rounded-xl font-bold tracking-wider hover:bg-sky-700 transition-colors"
                 >

@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import { Clock, AlertCircle, CheckCircle, RefreshCw, Banknote, Users, Info, Heart } from "lucide-react";
-import { loanRules } from "../../data/libraryData";
-import { loadSettings } from "../../utils/loanUtils";
+import type { LoanRule } from "../../data/libraryData";
+import { DEFAULT_SETTINGS, settingsApi } from "../../services/settingsApi";
 
 const ruleColors = [
   {
@@ -63,7 +64,23 @@ const procedures = [
 ];
 
 export function LoanInfo() {
-  const settings = loadSettings();
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [loanRules, setLoanRules] = useState<LoanRule[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const [librarySettings, rules] = await Promise.all([
+        settingsApi.fetch(),
+        settingsApi.fetchLoanRules(),
+      ]);
+      if (!active) return;
+      setSettings(librarySettings);
+      setLoanRules(rules);
+    })();
+    return () => { active = false; };
+  }, []);
+
   const maxDuration = Math.max(settings.durasiUmum, settings.durasiPelajar, settings.durasiDosen, 90);
 
   return (

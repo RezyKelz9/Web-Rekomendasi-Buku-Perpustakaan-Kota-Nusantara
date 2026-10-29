@@ -1,14 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Plus, Pencil, Trash2, X, MapPin, BookOpen,
   Layers, ArrowUpRight, Save, AlertTriangle,
 } from "lucide-react";
-import { shelves as initialShelves, books, Shelf } from "../../data/libraryData";
-import { useAuth } from "../../context/AuthContext";
-import { addActivity } from "../../utils/activityHistory";
-
-const getBookCountOnShelf = (shelfId: string) =>
-  books.filter((b) => b.shelfId === shelfId).length;
+import type { Book, Shelf } from "../../data/libraryData";
+import { fetchShelves, fetchBooks, createShelf, updateShelf, deleteShelf } from "../../services/libraryApi";
 
 const floorColors: Record<number, string> = {
   1: "bg-blue-500/10 border-blue-500/20",
@@ -31,7 +27,7 @@ const emptyShelf: Omit<Shelf, "id"> = {
   occupied: 0,
 };
 
-const getShelfOccupied = (shelfId: string) => getBookCountOnShelf(shelfId);
+
 
 /* ── ShelfFormModal ── */
 function ShelfFormModal({
@@ -48,7 +44,7 @@ function ShelfFormModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const id = (form as any).id ?? `shelf-${Date.now()}`;
+    const id = (form as any).id ?? form.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     onSave({ ...form, id } as Shelf);
   };
 
@@ -209,50 +205,60 @@ function DeleteConfirmModal({
    Main AdminShelves Page
 ════════════════════════════════════════════════════════════════ */
 export function AdminShelves() {
-  const { user } = useAuth();
-  const [shelves, setShelves] = useState<Shelf[]>(initialShelves);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [selectedFloor, setSelectedFloor] = useState<number | "all">("all");
   const [selectedShelf, setSelectedShelf] = useState<Shelf | null>(null);
   const [editingShelf, setEditingShelf] = useState<Shelf | Omit<Shelf, "id"> | null>(null);
   const [deletingShelf, setDeletingShelf] = useState<Shelf | null>(null);
+
+  const loadData = async () => {
+    const [shelfData, bookData] = await Promise.all([fetchShelves(), fetchBooks()]);
+    setShelves(shelfData);
+    setBooks(bookData);
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
 
   const floors = [...new Set(shelves.map((s) => s.floor))].sort();
 
   const getBooksOnShelf = (shelfId: string) =>
     books.filter((b) => b.shelfId === shelfId);
 
-  const handleSave = (shelf: Shelf) => {
-    const exists = shelves.some((s) => s.id === shelf.id);
-    setShelves((prev) => {
-      return exists ? prev.map((s) => (s.id === shelf.id ? shelf : s)) : [...prev, shelf];
-    });
-    if (user) {
-      addActivity(
-        user.namaLengkap,
-        user.email,
-        "Rak",
-        exists ? "Edit" : "Tambah",
-        exists
-          ? `Mengedit rak "${shelf.name}" – ${shelf.location}`
-          : `Menambahkan rak baru "${shelf.name}" – ${shelf.location}`,
-      );
+  const getShelfOccupied = (shelfId: string) => getBooksOnShelf(shelfId).length;
+
+  const handleSave = async (shelf: Shelf) => {
+    const existing = shelves.find((s) => s.id === shelf.id);
+    const payload = {
+      dbId: existing?.dbId,
+      kode: shelf.id,
+      name: shelf.name,
+      location: shelf.location,
+      floor: shelf.floor,
+      capacity: shelf.capacity,
+      categories: shelf.categories,
+    };
+    if (existing) {
+      const result = await updateShelf(payload);
+      if (!result.success) return;
+      setShelves((prev) => prev.map((s) => (s.id === shelf.id ? result.shelf ?? shelf : s)));
+    } else {
+      const result = await createShelf(payload);
+      if (!result.success || !result.shelf) return;
+      setShelves((prev) => [...prev, result.shelf as Shelf]);
     }
+    await loadData();
     setEditingShelf(null);
     setSelectedShelf(null);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deletingShelf) return;
+    const result = await deleteShelf(deletingShelf);
+    if (!result.success) return;
     setShelves((prev) => prev.filter((s) => s.id !== deletingShelf.id));
-    if (user) {
-      addActivity(
-        user.namaLengkap,
-        user.email,
-        "Rak",
-        "Hapus",
-        `Menghapus rak "${deletingShelf.name}" dari lantai ${deletingShelf.floor}`,
-      );
-    }
     setDeletingShelf(null);
     setSelectedShelf(null);
   };

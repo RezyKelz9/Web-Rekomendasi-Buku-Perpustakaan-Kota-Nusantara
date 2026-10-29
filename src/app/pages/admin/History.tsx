@@ -5,7 +5,8 @@ import {
   Plus, Pencil, CheckCircle2, XCircle, RotateCcw, Save,
   Clock,
 } from "lucide-react";
-import { loadHistory, ActivityRecord, ActivityModule, ActivityAction } from "../../utils/activityHistory";
+import { activityApi } from "../../services/activityApi";
+import type { ActivityRecord, ActivityModule, ActivityAction } from "../../services/activityApi";
 
 const moduleIcons: Record<ActivityModule, React.ElementType> = {
   Buku: BookOpen,
@@ -83,7 +84,11 @@ export function AdminHistory() {
   const [showClearModal, setShowClearModal] = useState(false);
 
   useEffect(() => {
-    setRecords(loadHistory());
+    let active = true;
+    void activityApi.list().then((data) => {
+      if (active) setRecords(data);
+    });
+    return () => { active = false; };
   }, []);
 
   const filtered = records.filter((r) => {
@@ -98,9 +103,9 @@ export function AdminHistory() {
 
   const grouped = groupByDate(filtered);
 
-  const handleClearHistory = () => {
-    localStorage.removeItem("perpus_activity_history");
-    setRecords([]);
+  const handleClearHistory = async () => {
+    const ok = await activityApi.clear();
+    if (ok) setRecords([]);
     setShowClearModal(false);
   };
 

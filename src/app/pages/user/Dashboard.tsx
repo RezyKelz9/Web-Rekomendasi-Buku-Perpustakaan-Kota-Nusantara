@@ -1,56 +1,52 @@
 import { Link } from "react-router";
 import { useState, useEffect } from "react";
 import { BookOpen, Star, MapPin, Clock, ArrowRight, TrendingUp, Users, BookMarked } from "lucide-react";
-import { categories as staticCategories, shelves, books as staticBooks } from "../../data/libraryData";
-import { getAvailableBooks } from "../../utils/bookAvailability";
-
-const USERS_KEY = "perpus_users";
+import type { Book, Category, Shelf } from "../../data/libraryData";
+import { fetchBooks, fetchCategories, fetchShelves } from "../../services/libraryApi";
+import { statsApi, type LibraryStats } from "../../services/statsApi";
 
 const heroImage = "https://images.unsplash.com/photo-1709159057304-2f4d5c9fb37e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=1080";
 
 export function Dashboard() {
-  const [books, setBooks] = useState(getAvailableBooks());
-  const [catCounts, setCatCounts] = useState<Record<string, number>>({});
+  const [books, setBooks] = useState<Book[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [statsData, setStatsData] = useState<LibraryStats | null>(null);
 
   useEffect(() => {
-    setBooks(getAvailableBooks());
-
-    const counts: Record<string, number> = {};
-    staticCategories.forEach((c) => { counts[c.id] = 0; });
-    staticBooks.forEach((b) => { counts[b.categoryId] = (counts[b.categoryId] || 0) + 1; });
-    setCatCounts(counts);
-
-    const handleStorageChange = () => {
-      setBooks(getAvailableBooks());
-    };
-    window.addEventListener("storage", handleStorageChange);
-
-    const interval = setInterval(() => {
-      setBooks(getAvailableBooks());
-    }, 3000);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
+    let active = true;
+    void (async () => {
+      const [bookList, categoryList, shelfList, stats] = await Promise.all([
+        fetchBooks(),
+        fetchCategories(),
+        fetchShelves(),
+        statsApi.fetch(),
+      ]);
+      if (!active) return;
+      setBooks(bookList);
+      setCategories(categoryList);
+      setShelves(shelfList);
+      setStatsData(stats);
+    })();
+    return () => { active = false; };
   }, []);
 
   const recommended = books.filter((b) => b.recommended);
   const available = books.filter((b) => b.available);
-
-  const users = JSON.parse(localStorage.getItem(USERS_KEY) || "[]");
-  const memberCount = users.filter((u: any) => u.role === "member").length;
+  const catCounts = books.reduce<Record<string, number>>((counts, book) => {
+    counts[book.categoryId] = (counts[book.categoryId] || 0) + 1;
+    return counts;
+  }, {});
 
   const stats = [
-    { label: "Total Buku", value: String(available.length), icon: BookOpen, color: "bg-sky-100 text-sky-700" },
-    { label: "Kategori", value: String(staticCategories.length), icon: BookMarked, color: "bg-indigo-100 text-indigo-700" },
+    { label: "Total Buku", value: String(statsData?.totalBooks ?? books.length), icon: BookOpen, color: "bg-sky-100 text-sky-700" },
+    { label: "Kategori", value: String(categories.length), icon: BookMarked, color: "bg-indigo-100 text-indigo-700" },
     { label: "Rak Buku", value: String(shelves.length), icon: MapPin, color: "bg-cyan-100 text-cyan-700" },
-    { label: "Anggota Aktif", value: String(memberCount), icon: Users, color: "bg-blue-100 text-blue-700" },
+    { label: "Anggota Aktif", value: String(statsData?.totalMembers ?? 0), icon: Users, color: "bg-blue-100 text-blue-700" },
   ];
 
   return (
     <div className="space-y-8">
-      {/* Hero Banner */}
       <div
         className="relative rounded-2xl overflow-hidden h-52 lg:h-64 flex items-end"
         style={{ backgroundImage: `url(${heroImage})`, backgroundSize: "cover", backgroundPosition: "center" }}
@@ -72,7 +68,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((s) => (
           <div key={s.label} className="bg-white rounded-2xl p-4 shadow-sm border border-sky-100 flex items-center gap-3">
@@ -87,7 +82,6 @@ export function Dashboard() {
         ))}
       </div>
 
-      {/* Recommended Books */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -100,7 +94,7 @@ export function Dashboard() {
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {recommended.map((book) => {
-            const category = staticCategories.find((c) => c.id === book.categoryId);
+            const category = categories.find((c) => c.id === book.categoryId);
             const shelf = shelves.find((s) => s.id === book.shelfId);
             return (
               <Link
@@ -129,6 +123,7 @@ export function Dashboard() {
                     <MapPin size={10} className="text-sky-400" />
                     <span className="text-sky-400 text-xs">{shelf?.name} – {book.shelfPosition}</span>
                   </div>
+                  {category && <span className="sr-only">{category.name}</span>}
                 </div>
               </Link>
             );
@@ -136,7 +131,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Categories Quick Access */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -148,7 +142,7 @@ export function Dashboard() {
           </Link>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {staticCategories.map((cat) => (
+          {categories.map((cat) => (
             <Link
               key={cat.id}
               to={`/user/books?category=${cat.id}`}
@@ -164,7 +158,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Available Books Banner */}
       <div className="bg-gradient-to-r from-sky-500 to-sky-700 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <p className="text-sky-100 text-sm">Siap Dipinjam Sekarang</p>
@@ -180,7 +173,6 @@ export function Dashboard() {
         </Link>
       </div>
 
-      {/* Loan Duration Quick Info */}
       <div className="bg-white rounded-2xl p-5 border border-sky-100 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Clock size={20} className="text-sky-600" />
