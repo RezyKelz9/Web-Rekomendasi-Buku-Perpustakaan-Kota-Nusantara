@@ -136,17 +136,47 @@ Semua kode dan dump database diambil dari GitHub, jadi tidak perlu menyalin fold
 
 ## Endpoint Utama
 
-Semua endpoint memakai prefix `/api` dan mempertahankan path lama agar kompatibel:
+Semua endpoint memakai prefix `/api`. Klien memanggil path tanpa ekstensi (mis.
+`books`, `login`) karena Vercel memblokir path berakhiran `.php`; backend tetap
+menyediakan route `.php` lama dan `server/app.js` memetakan alias-nya.
 
-- `auth/login.php`, `auth/register.php`, `auth/me.php`, `auth/logout.php`, `auth/change-password.php`
-- `books/index.php`, `categories/index.php`, `shelves/index.php`
-- `loans/index.php`, `ratings/index.php`, `users/index.php`
-- `settings/index.php`, `loan-rules/index.php`
-- `stats/index.php`, `activity/index.php`
-- `migration/local-data.php`
+- `login`, `register`, `register-admin` (legacy: `auth/login.php`, `auth/register.php`, ...)
+- `me`, `logout`, `change-password`
+- `books`, `categories`, `shelves`
+- `loans`, `ratings`, `users`
+- `settings`, `loan-rules`
+- `stats`, `activity`
+- `migration-local-data` (legacy: `migration/local-data.php`)
 
 Endpoint yang mengubah data memerlukan header `Authorization: Bearer <auth_token>`.
 Endpoint admin memerlukan role `admin`.
+
+## Deploy Gratis (Vercel + Neon)
+
+Produksi: https://perpus-digital-topaz-mu.vercel.app
+
+Arsitektur: Vercel (frontend static + fungsi `api/[route].js`) dan Neon PostgreSQL
+(region Singapore). Setiap `git push` ke `main` otomatis deploy (integrasi GitHub).
+
+Langkah menyiapkan dari nol:
+
+1. Buat project Neon, salin connection string (`...?sslmode=require`).
+2. Restore dump ke Neon dari laptop (butuh `pg_restore`):
+
+   ```bash
+   pg_restore --no-owner --no-privileges --clean --if-exists \
+     -d "<neon-connection-string>" database/backup/db_perpus_digital.dump
+   ```
+
+3. Import repo di Vercel (Framework Preset: Vite), lalu set Environment Variables:
+   - `DATABASE_URL=<neon-connection-string>`
+   - `VITE_API_URL=/api` (wajib, dibaca saat build)
+   - `FRONTEND_ORIGIN=https://<project>.vercel.app`
+4. Deploy. Cek `https://<project>.vercel.app/api/health`.
+
+Catatan: fungsi Vercel hanya menangkap satu segmen path, jadi route API
+dipadatkan (`/api/login`, `/api/migration-local-data`). `vercel.json` mengatur
+SPA fallback dengan pengecualian `/api/`.
 
 ## Migrasi Data localStorage
 

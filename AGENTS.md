@@ -32,6 +32,9 @@ ubah `.env`.
 
 - Tanpa fallback localStorage — semua data lewat API.
 - Path API diakhiri `/index.php` (mis. `books/index.php`).
+- Frontend memanggil path API **tanpa ekstensi** (mis. `books`, `login`) karena
+  Vercel memblokir `.php`. `server/app.js` memetakan alias ke route `.php` lama.
+  Hosting: `api/[route].js` di Vercel + Neon (`DATABASE_URL`).
 - Kategori/rak: frontend pakai `kode` sebagai `id`, field `dbId` (numerik) untuk
   update/delete di backend.
 - Buku: `id` numerik (string). Sesi/token disimpan di `sessionStorage`
