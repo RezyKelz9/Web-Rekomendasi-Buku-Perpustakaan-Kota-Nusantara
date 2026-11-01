@@ -63,7 +63,7 @@ export async function submitLegacyMigration(payload: LegacyPayload) {
     activities: { imported: number; skipped: number };
     settings: boolean;
     warnings: string[];
-  }>("migration/local-data.php", payload);
+  }>("migration-local-data", payload);
 }
 
 export function clearLegacyData() {

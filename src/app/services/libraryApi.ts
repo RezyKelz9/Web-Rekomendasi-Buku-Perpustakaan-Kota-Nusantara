@@ -52,12 +52,12 @@ function mapApiBook(row: Record<string, unknown>): Book {
 }
 
 export async function fetchShelves(): Promise<Shelf[]> {
-  const res = await apiClient.get<Record<string, unknown>[]>("shelves/index.php");
+  const res = await apiClient.get<Record<string, unknown>[]>("shelves");
   return res.success && res.data ? res.data.map(mapApiShelf) : [];
 }
 
 export async function fetchCategories(): Promise<Category[]> {
-  const res = await apiClient.get<Record<string, unknown>[]>("categories/index.php");
+  const res = await apiClient.get<Record<string, unknown>[]>("categories");
   return res.success && res.data ? res.data.map(mapApiCategory) : [];
 }
 
@@ -67,13 +67,13 @@ export async function fetchBooks(): Promise<Book[]> {
 }
 
 export async function fetchBooksFromApi(): Promise<Book[] | null> {
-  const res = await apiClient.get<Record<string, unknown>[]>("books/index.php");
+  const res = await apiClient.get<Record<string, unknown>[]>("books");
   return res.success && res.data ? res.data.map(mapApiBook) : null;
 }
 
 export async function fetchBook(id: string): Promise<Book | null> {
   const res = await apiClient.get<Record<string, unknown>[]>(
-    `books/index.php?id=${encodeURIComponent(id)}`
+    `books?id=${encodeURIComponent(id)}`
   );
   return res.success && res.data?.length ? mapApiBook(res.data[0]) : null;
 }
@@ -81,7 +81,7 @@ export async function fetchBook(id: string): Promise<Book | null> {
 export async function createBook(
   book: Omit<Book, "id">
 ): Promise<{ success: boolean; message?: string; book?: Book }> {
-  const res = await apiClient.post<Record<string, unknown>>("books/index.php", book);
+  const res = await apiClient.post<Record<string, unknown>>("books", book);
   return {
     success: res.success,
     message: res.message,
@@ -92,7 +92,7 @@ export async function createBook(
 export async function updateBook(
   book: Book
 ): Promise<{ success: boolean; message?: string; book?: Book }> {
-  const res = await apiClient.put<Record<string, unknown>>("books/index.php", book);
+  const res = await apiClient.put<Record<string, unknown>>("books", book);
   return {
     success: res.success,
     message: res.message,
@@ -103,7 +103,7 @@ export async function updateBook(
 export async function deleteBook(
   id: string
 ): Promise<{ success: boolean; message?: string }> {
-  const res = await apiClient.delete("books/index.php", { id });
+  const res = await apiClient.delete("books", { id });
   return { success: res.success, message: res.message };
 }
 
@@ -119,7 +119,7 @@ export type CategoryInput = {
 export async function createCategory(
   data: CategoryInput
 ): Promise<{ success: boolean; message?: string; category?: Category }> {
-  const res = await apiClient.post<Record<string, unknown>>("categories/index.php", data);
+  const res = await apiClient.post<Record<string, unknown>>("categories", data);
   return {
     success: res.success,
     message: res.message,
@@ -130,7 +130,7 @@ export async function createCategory(
 export async function updateCategory(
   data: CategoryInput
 ): Promise<{ success: boolean; message?: string; category?: Category }> {
-  const res = await apiClient.put<Record<string, unknown>>("categories/index.php", {
+  const res = await apiClient.put<Record<string, unknown>>("categories", {
     ...data,
     id: data.dbId,
   });
@@ -144,7 +144,7 @@ export async function updateCategory(
 export async function deleteCategory(
   category: { id: string; dbId?: number }
 ): Promise<{ success: boolean; message?: string }> {
-  const res = await apiClient.delete("categories/index.php", { id: category.dbId });
+  const res = await apiClient.delete("categories", { id: category.dbId });
   return { success: res.success, message: res.message };
 }
 
@@ -161,7 +161,7 @@ export type ShelfInput = {
 export async function createShelf(
   data: ShelfInput
 ): Promise<{ success: boolean; message?: string; shelf?: Shelf }> {
-  const res = await apiClient.post<Record<string, unknown>>("shelves/index.php", data);
+  const res = await apiClient.post<Record<string, unknown>>("shelves", data);
   return {
     success: res.success,
     message: res.message,
@@ -172,7 +172,7 @@ export async function createShelf(
 export async function updateShelf(
   data: ShelfInput
 ): Promise<{ success: boolean; message?: string; shelf?: Shelf }> {
-  const res = await apiClient.put<Record<string, unknown>>("shelves/index.php", {
+  const res = await apiClient.put<Record<string, unknown>>("shelves", {
     ...data,
     id: data.dbId,
   });
@@ -186,6 +186,6 @@ export async function updateShelf(
 export async function deleteShelf(
   shelf: { id: string; dbId?: number }
 ): Promise<{ success: boolean; message?: string }> {
-  const res = await apiClient.delete("shelves/index.php", { id: shelf.dbId });
+  const res = await apiClient.delete("shelves", { id: shelf.dbId });
   return { success: res.success, message: res.message };
 }

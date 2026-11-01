@@ -1,0 +1,7 @@
+node_modules
+dist
+graphify-out
+.env
+.env.*
+!.env.example
+Web perpus_digital.md

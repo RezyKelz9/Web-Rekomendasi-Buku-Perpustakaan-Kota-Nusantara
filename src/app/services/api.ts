@@ -30,7 +30,7 @@ export const authApi = {
     password: string,
     requiredRole?: "admin" | "member"
   ): Promise<{ success: boolean; message?: string; user?: ApiUser }> {
-    const res = await apiClient.postPublic<ApiUser>("auth/login.php", {
+    const res = await apiClient.postPublic<ApiUser>("login", {
       email,
       password,
       requiredRole,
@@ -45,7 +45,7 @@ export const authApi = {
   async register(
     data: RegisterData
   ): Promise<{ success: boolean; message?: string; user?: ApiUser }> {
-    const res = await apiClient.postPublic<ApiUser>("auth/register.php", data);
+    const res = await apiClient.postPublic<ApiUser>("register", data);
     const user = pickUser(res);
     if (res.success && user) {
       return { success: true, message: res.message || "Registrasi berhasil.", user };
@@ -56,7 +56,7 @@ export const authApi = {
   async registerAdmin(
     data: AdminRegisterData
   ): Promise<{ success: boolean; message?: string; user?: ApiUser }> {
-    const res = await apiClient.postPublic<ApiUser>("auth/register-admin.php", data);
+    const res = await apiClient.postPublic<ApiUser>("register-admin", data);
     const user = pickUser(res);
     if (res.success && user) {
       return { success: true, message: res.message || "Registrasi admin berhasil.", user };
@@ -65,19 +65,19 @@ export const authApi = {
   },
 
   async me(): Promise<ApiUser | null> {
-    const res = await apiClient.get<ApiUser>("auth/me.php");
+    const res = await apiClient.get<ApiUser>("me");
     return res.success ? pickUser(res) : null;
   },
 
   async logout(): Promise<void> {
-    await apiClient.post("auth/logout.php", {});
+    await apiClient.post("logout", {});
   },
 
   async changePassword(
     currentPassword: string,
     newPassword: string
   ): Promise<{ success: boolean; message: string }> {
-    const res = await apiClient.post("auth/change-password.php", {
+    const res = await apiClient.post("change-password", {
       currentPassword,
       newPassword,
     });
@@ -88,7 +88,7 @@ export const authApi = {
     id: string | number,
     data: Partial<ApiUser>
   ): Promise<{ success: boolean; message?: string; user?: ApiUser }> {
-    const res = await apiClient.put<ApiUser>("users/index.php", { id, ...data });
+    const res = await apiClient.put<ApiUser>("users", { id, ...data });
     return {
       success: res.success,
       message: res.message,
@@ -97,12 +97,12 @@ export const authApi = {
   },
 
   async fetchUsers(): Promise<ApiUser[]> {
-    const res = await apiClient.get<ApiUser[]>("users/index.php");
+    const res = await apiClient.get<ApiUser[]>("users");
     return res.success && res.data ? res.data : [];
   },
 
   async deleteUser(id: number): Promise<boolean> {
-    const res = await apiClient.delete("users/index.php", { id });
+    const res = await apiClient.delete("users", { id });
     return res.success;
   },
 };

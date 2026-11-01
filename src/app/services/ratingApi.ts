@@ -16,13 +16,13 @@ export const ratingApi = {
     if (userId) params.set("userId", userId);
     if (loanId) params.set("loanId", loanId);
     const qs = params.toString();
-    const res = await apiClient.get<RatingRecord[]>(`ratings/index.php${qs ? `?${qs}` : ""}`);
+    const res = await apiClient.get<RatingRecord[]>(`ratings${qs ? `?${qs}` : ""}`);
     return res.success && res.data ? res.data : [];
   },
 
   async submit(loanId: string, userId: string, rating: number): Promise<boolean> {
     const numericId = loanId.replace("LOAN-", "");
-    const res = await apiClient.post("ratings/index.php", { loanId: numericId, userId, rating });
+    const res = await apiClient.post("ratings", { loanId: numericId, userId, rating });
     return res.success;
   },
 };

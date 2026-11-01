@@ -22,7 +22,7 @@ const EMPTY_STATS: LibraryStats = {
 
 export const statsApi = {
   async fetch(): Promise<LibraryStats> {
-    const res = await apiClient.get<LibraryStats>("stats/index.php");
+    const res = await apiClient.get<LibraryStats>("stats");
     return res.success && res.data ? res.data : EMPTY_STATS;
   },
 };

@@ -47,7 +47,7 @@ async function listLoans(params: { userId?: string; status?: string; id?: string
   if (params.status) search.set("status", params.status);
   if (params.id) search.set("id", params.id);
   const qs = search.toString();
-  const res = await apiClient.get<ApiLoan[]>(`loans/index.php${qs ? `?${qs}` : ""}`);
+  const res = await apiClient.get<ApiLoan[]>(`loans${qs ? `?${qs}` : ""}`);
   return res.success && res.data ? res.data.map(toLoanRecord) : [];
 }
 
@@ -69,7 +69,7 @@ export const loanApi = {
     userType?: string;
     isFavorite?: boolean;
   }): Promise<LoanRecord | null> {
-    const res = await apiClient.post<ApiLoan>("loans/index.php", data);
+    const res = await apiClient.post<ApiLoan>("loans", data);
     return res.success && res.data ? toLoanRecord(res.data) : null;
   },
 
@@ -80,12 +80,12 @@ export const loanApi = {
   ): Promise<boolean> {
     const body: Record<string, unknown> = { id, action };
     if (fine !== undefined) body.fine = fine;
-    const res = await apiClient.put("loans/index.php", body);
+    const res = await apiClient.put("loans", body);
     return res.success;
   },
 
   async delete(loanId: number): Promise<boolean> {
-    const res = await apiClient.delete("loans/index.php", { id: loanId });
+    const res = await apiClient.delete("loans", { id: loanId });
     return res.success;
   },
 

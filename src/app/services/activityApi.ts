@@ -23,7 +23,7 @@ export interface ActivityRecord {
 
 export const activityApi = {
   async list(): Promise<ActivityRecord[]> {
-    const res = await apiClient.get<ActivityRecord[]>("activity/index.php");
+    const res = await apiClient.get<ActivityRecord[]>("activity");
     return res.success && res.data ? res.data : [];
   },
 
@@ -32,12 +32,12 @@ export const activityApi = {
     action: ActivityAction,
     description: string
   ): Promise<boolean> {
-    const res = await apiClient.post("activity/index.php", { module, action, description });
+    const res = await apiClient.post("activity", { module, action, description });
     return res.success;
   },
 
   async clear(): Promise<boolean> {
-    const res = await apiClient.delete("activity/index.php");
+    const res = await apiClient.delete("activity");
     return res.success;
   },
 };
