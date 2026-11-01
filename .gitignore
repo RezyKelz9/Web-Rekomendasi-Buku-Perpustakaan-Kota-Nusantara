@@ -35,3 +35,6 @@ graphify-out/
 
 # Log sesi lokal (tidak untuk publikasi)
 Web perpus_digital.md
+
+# Vercel
+.vercel/

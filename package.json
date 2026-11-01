@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "vite",
     "preview": "vite preview",
+    "start": "node server/index.js",
     "api": "node server/index.js",
     "api:dev": "node --watch server/index.js",
     "db:setup": "node server/scripts/setup-db.js",
