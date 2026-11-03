@@ -162,7 +162,7 @@ export function AdminLoans() {
                     <p className="text-xs text-slate-400">{loan.userType || "Umum"}</p>
                   </td>
                   <td className="px-4 py-4">
-                    <TransactionCode code={loan.transactionCode} tone="dark" />
+                    <TransactionCode code={loan.transactionCode} className="text-slate-300" />
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
