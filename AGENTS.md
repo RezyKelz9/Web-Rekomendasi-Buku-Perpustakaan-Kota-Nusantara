@@ -26,7 +26,8 @@ npm run build          # build produksi
 ```
 
 `.env` disalin dari `.env.example` (`VITE_API_URL`, `API_PORT`, `FRONTEND_ORIGIN`,
-`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `NEON_DATABASE_URL`).
+`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `NEON_DATABASE_URL`,
+`VITE_IDLE_TIMEOUT_MINUTES`).
 Restart API setelah ubah `.env`.
 
 ## Aturan proyek
@@ -40,6 +41,10 @@ Restart API setelah ubah `.env`.
   update/delete di backend.
 - Buku: `id` numerik (string). Sesi/token disimpan di `sessionStorage`
   (`perpus_session`), server mengembalikan `auth_token`.
+- Sesi member otomatis berakhir setelah 20 menit tanpa aktivitas
+  (`useIdleLogout`, `src/app/services/sessionTimeout.ts`), lalu redirect ke
+  `/login?expired=1`. Durasi diatur lewat `VITE_IDLE_TIMEOUT_MINUTES`; sesi
+  admin tidak dibatasi.
 - Denda/durasi pinjam dihitung di server dari `library_settings` + `loan_rules`.
 - Sinkron konten lokal -> Neon hanya lewat `npm run db:sync:neon` (dry-run
   default, `--apply` untuk menulis). Tabel `users`, `loans`, `ratings`,

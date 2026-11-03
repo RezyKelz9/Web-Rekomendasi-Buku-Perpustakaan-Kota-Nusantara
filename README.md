@@ -8,7 +8,7 @@ kategori, serta peminjaman buku. Terdapat dua portal: **anggota** dan **admin**.
 - **Frontend:** React 18, Vite 6, TypeScript, Tailwind CSS 4, React Router
 - **Backend:** Node.js, Express, `pg`
 - **Database:** PostgreSQL 17 (`db_perpus_digital`)
-- **Sesi login:** token disimpan di `sessionStorage`
+- **Sesi login:** token disimpan di `sessionStorage`; sesi member berakhir otomatis setelah 20 menit tanpa aktivitas
 
 Seluruh data aplikasi disimpan di PostgreSQL. Tidak ada fallback data statis atau localStorage
 saat API tidak tersedia. Halaman **Admin > Migrasi Data Lama** disediakan untuk memindahkan data
@@ -157,6 +157,18 @@ awalan). Data lama diisi otomatis oleh migrasi
 
 Saat menambah kolom baru, terapkan migrasi ke Neon **sebelum** deploy kode:
 `psql "<NEON_DATABASE_URL>" -f database/postgres/migrations/<file>.sql`.
+
+## Batas Idle Sesi Member
+
+Sesi anggota otomatis berakhir jika tidak ada aktivitas (mouse, keyboard,
+scroll, sentuh) selama 20 menit. Frontend membatalkan token lewat
+`POST /api/logout`, lalu memuat ulang halaman ke `/login?expired=1` dengan pesan
+"SESI BERAKHIR, SILAHKAN LOGIN KEMBALI!".
+
+- Aktivitas di salah satu tab dihitung untuk semua tab anggota.
+- Sesi admin/staff/petugasRak tidak dibatasi.
+- Durasi diatur lewat `VITE_IDLE_TIMEOUT_MINUTES` (default 20). Nilai dibaca
+  saat build; contoh pengujian: `VITE_IDLE_TIMEOUT_MINUTES=1`.
 
 ## Endpoint Utama
 

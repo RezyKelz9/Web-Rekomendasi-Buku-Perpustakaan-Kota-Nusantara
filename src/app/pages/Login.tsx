@@ -14,12 +14,18 @@ export function Login() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState(() =>
+    new URLSearchParams(location.search).get("expired") === "1"
+      ? "SESI BERAKHIR, SILAHKAN LOGIN KEMBALI!"
+      : ""
+  );
   const [loading, setLoading] = useState(false);
   const currentYear = new Date().getFullYear();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
     setError("");
+    setNotice("");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -70,6 +76,12 @@ export function Login() {
           <div className="px-8 py-8">
             <h2 className="text-sky-900 text-xl font-bold mb-1">Selamat Datang</h2>
             <p className="text-slate-400 text-sm mb-7">Masuk untuk mengakses perpustakaan digital</p>
+
+            {notice && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm font-semibold rounded-xl px-4 py-3 mb-5">
+                {notice}
+              </div>
+            )}
 
             {error && (
               <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm rounded-xl px-4 py-3 mb-5">

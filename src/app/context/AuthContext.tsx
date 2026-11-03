@@ -3,6 +3,7 @@ import { authApi } from "../services/api";
 import {
   broadcastLogout, clearSession, getSessionUser, onAuthBroadcast, saveSession,
 } from "../services/apiClient";
+import { clearIdleTimer, useIdleLogout } from "../services/sessionTimeout";
 
 export type UserRole = "member" | "admin" | "staff" | "petugasRak";
 export type UserStatus = "active" | "pending" | "inactive" | "blocked";
@@ -100,6 +101,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveUser({ ...toUser(fresh), authToken: user.authToken });
   };
 
+  const expireSession = async () => {
+    const token = user?.authToken;
+    if (token) {
+      try {
+        await Promise.race([
+          authApi.logout(),
+          new Promise((resolve) => window.setTimeout(resolve, 2000)),
+        ]);
+      } catch {
+        // Abaikan kegagalan jaringan; sesi lokal tetap diakhiri.
+      }
+    }
+    clearIdleTimer();
+    clearSession();
+    setUser(null);
+    broadcastLogout(token);
+    window.location.replace("/login?expired=1");
+  };
+
+  useIdleLogout(user?.role === "member" && user?.status === "active", expireSession);
+
   useEffect(() => {
     if (user?.authToken) void refreshUser();
     const handleUnauthorized = () => setUser(null);
@@ -152,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     const token = user?.authToken;
     void authApi.logout().catch(() => undefined);
+    clearIdleTimer();
     clearSession();
     setUser(null);
     broadcastLogout(token);
