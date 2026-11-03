@@ -18,15 +18,16 @@ summary ada di bagian bawah file).
 ## Perintah
 
 ```bash
-npm run db:setup   # buat/migrasi database + seed
-npm run api        # backend Express (port 3001)
-npm run dev        # frontend Vite (port 5173)
-npm run build      # build produksi
+npm run db:setup       # buat/migrasi database + seed
+npm run db:sync:neon   # sinkron konten lokal -> Neon (dry-run; --apply untuk menulis)
+npm run api            # backend Express (port 3001)
+npm run dev            # frontend Vite (port 5173)
+npm run build          # build produksi
 ```
 
 `.env` disalin dari `.env.example` (`VITE_API_URL`, `API_PORT`, `FRONTEND_ORIGIN`,
-`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`). Restart API setelah
-ubah `.env`.
+`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `NEON_DATABASE_URL`).
+Restart API setelah ubah `.env`.
 
 ## Aturan proyek
 
@@ -40,3 +41,11 @@ ubah `.env`.
 - Buku: `id` numerik (string). Sesi/token disimpan di `sessionStorage`
   (`perpus_session`), server mengembalikan `auth_token`.
 - Denda/durasi pinjam dihitung di server dari `library_settings` + `loan_rules`.
+- Sinkron konten lokal -> Neon hanya lewat `npm run db:sync:neon` (dry-run
+  default, `--apply` untuk menulis). Tabel `users`, `loans`, `ratings`,
+  `activity_logs`, `library_settings` tidak ikut disinkronkan. Perubahan skema
+  untuk Neon ditulis di `database/postgres/migrations/`.
+- Kode transaksi peminjaman (`transaction_code`, format `PJM-YYYYMMDD-XXXX`)
+  dibuat server lewat `generateLoanCode()` dan tidak boleh diubah setelah ada.
+  Semua insert ke `loans` wajib mengisi kolom ini. Migrasi skema ke Neon
+  dijalankan sebelum deploy kode yang memakai kolom baru.

@@ -134,6 +134,30 @@ Semua kode dan dump database diambil dari GitHub, jadi tidak perlu menyalin fold
 
    Buka `http://localhost:5173`, login dengan akun demo di atas.
 
+## Kode Transaksi Peminjaman
+
+Setiap peminjaman mendapat kode unik yang tidak berubah, dibuat server saat
+pinjaman dibuat:
+
+```text
+PJM-YYYYMMDD-XXXX
+contoh: PJM-20261101-7K3M
+```
+
+- `YYYYMMDD` = tanggal pinjam (zona waktu Asia/Jakarta).
+- `XXXX` = 4 karakter acak dari `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (tanpa
+  I/O/0/1 agar tidak ambigu). Bentrok ditangani retry otomatis di server.
+- Member dapat mencari kode miliknya sendiri; admin dapat mencari semua kode.
+- Kode ditampilkan di kartu pinjaman, riwayat, tabel admin, dan halaman
+  pembayaran. Klik kode untuk menyalinnya.
+
+Pencarian lewat API: `GET /api/loans?code=PJM-20261101` (cocok persis atau
+awalan). Data lama diisi otomatis oleh migrasi
+`database/postgres/migrations/20261101-add-loan-transaction-code.sql`.
+
+Saat menambah kolom baru, terapkan migrasi ke Neon **sebelum** deploy kode:
+`psql "<NEON_DATABASE_URL>" -f database/postgres/migrations/<file>.sql`.
+
 ## Endpoint Utama
 
 Semua endpoint memakai prefix `/api`. Klien memanggil path tanpa ekstensi (mis.
@@ -178,6 +202,55 @@ Catatan: fungsi Vercel hanya menangkap satu segmen path, jadi route API
 dipadatkan (`/api/login`, `/api/migration-local-data`). `vercel.json` mengatur
 SPA fallback dengan pengecualian `/api/`.
 
+## Sinkron Konten Lokal ke Neon
+
+Alur yang dipakai: konten diubah dan diuji di PostgreSQL lokal, lalu dikirim
+selektif ke Neon sebelum/saat deploy. Deploy kode **tidak** menyentuh database.
+
+Isi `NEON_DATABASE_URL` di `.env` (host wajib `*.neon.tech`):
+
+```env
+NEON_DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+```
+
+Perintah:
+
+```bash
+npm run db:sync:neon                    # dry-run: tampilkan rencana perubahan
+npm run db:sync:neon -- --apply         # terapkan ke Neon (satu transaksi)
+npm run db:sync:neon -- --only=books    # batasi tabel tertentu
+```
+
+Tabel yang disinkronkan: `categories`, `shelves`, `shelf_categories`, `books`,
+`loan_rules`. Tabel `users`, `loans`, `ratings`, `activity_logs`, dan
+`library_settings` **tidak** disentuh, sehingga akun/pinjaman online aman.
+
+Aturan pencocokan:
+
+- Kategori dan rak memakai `kode`.
+- Buku memakai ISBN (dinormalisasi); jika ISBN ganda/kosong dipakai
+  `judul` + `penulis`. Buku baru memakai id identity Neon, jadi id lokal dan
+  Neon bisa berbeda setelah ada buku baru.
+- Aturan pinjam memakai `type`.
+
+Penghapusan lokal tidak ikut menghapus data Neon (tanpa prune). Cover buku hanya
+berupa URL publik di kolom `cover`, bukan file yang diunggah.
+
+Backup sebelum menulis (Neon branch, instan):
+
+```bash
+npx neonctl branches create --project-id <project-id> --name pre-sync-YYYYMMDD
+```
+
+Hapus branch lama bila sudah mencapai batas 10 branch (free tier).
+
+Jika kode menambah kolom/tabel, terapkan migrasi ke Neon lebih dulu
+(`database/postgres/migrations/`), karena `schema.sql` hanya membuat tabel yang
+belum ada dan tidak mengubah tabel lama.
+
+Jangan mengarahkan `npm run db:restore` ke Neon: skrip itu memakai
+`pg_restore --clean`. Skrip kini menolak host non-lokal kecuali dengan `--force`.
+
 ## Migrasi Data localStorage
 
 1. Jalankan API dan frontend.
@@ -194,12 +267,13 @@ Data yang sudah ada di PostgreSQL tidak ditimpa; data duplikat akan dilewati.
 .
 ├── database/
 │   ├── postgres/schema.sql        # Schema PostgreSQL
+│   ├── postgres/migrations/       # Migrasi manual untuk Neon
 │   └── backup/                    # Dump database (pg_dump -Fc)
 ├── server/
 │   ├── index.js                   # Entry API Express
 │   ├── db.js, http.js, helpers.js, auth.js
 │   ├── routes/                    # Endpoint API
-│   └── scripts/                   # setup-db.js, restore-db.js, seed.ts
+│   └── scripts/                   # setup-db.js, restore-db.js, seed.ts, sync-to-neon.js
 ├── src/app/
 │   ├── components/                # Komponen UI dan layout
 │   ├── context/                   # Auth context (sessionStorage)

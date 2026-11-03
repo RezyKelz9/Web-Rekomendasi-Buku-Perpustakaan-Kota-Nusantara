@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { withTransaction } from "../db.js";
 import { authenticate, requireAdmin } from "../auth.js";
 import { asyncHandler, fail, handleDatabaseError, input, respond } from "../http.js";
-import { generateMemberCode, normalizeIsbn, normalizeText } from "../helpers.js";
+import { generateLoanCode, generateMemberCode, normalizeIsbn, normalizeText } from "../helpers.js";
 
 export const migrationRouter = Router();
 
@@ -237,8 +237,8 @@ migrationRouter.post(
           const inserted = await client.query(
             `INSERT INTO loans
                (user_id, book_id, borrowed_at, due_at, returned_at, duration, fine,
-                is_favorite, payment_status, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                is_favorite, payment_status, status, transaction_code)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING id`,
             [
               userId,
@@ -251,6 +251,7 @@ migrationRouter.post(
               Boolean(legacy.isFavorite),
               paymentStatus,
               status,
+              generateLoanCode(borrowedAt),
             ]
           );
           loanMap.set(String(legacy.id), inserted.rows[0].id);

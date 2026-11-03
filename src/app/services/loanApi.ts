@@ -3,6 +3,7 @@ import type { LoanRecord, LoanStatus } from "../utils/loanUtils";
 
 interface ApiLoan {
   id: number;
+  transaction_code: string;
   user_id: number;
   book_id: number;
   title: string;
@@ -23,6 +24,7 @@ interface ApiLoan {
 function toLoanRecord(api: ApiLoan): LoanRecord {
   return {
     id: `LOAN-${api.id}`,
+    transactionCode: api.transaction_code || "",
     userId: String(api.user_id),
     bookId: String(api.book_id),
     title: api.title,
@@ -41,11 +43,21 @@ function toLoanRecord(api: ApiLoan): LoanRecord {
   };
 }
 
-async function listLoans(params: { userId?: string; status?: string; id?: string }): Promise<LoanRecord[]> {
+function toNumericId(value: string): number {
+  return parseInt(String(value).replace(/^LOAN-/, ""), 10);
+}
+
+async function listLoans(params: {
+  userId?: string;
+  status?: string;
+  id?: string;
+  code?: string;
+}): Promise<LoanRecord[]> {
   const search = new URLSearchParams();
   if (params.userId) search.set("userId", params.userId);
   if (params.status) search.set("status", params.status);
   if (params.id) search.set("id", params.id);
+  if (params.code) search.set("code", params.code);
   const qs = search.toString();
   const res = await apiClient.get<ApiLoan[]>(`loans${qs ? `?${qs}` : ""}`);
   return res.success && res.data ? res.data.map(toLoanRecord) : [];
@@ -57,7 +69,14 @@ export const loanApi = {
   },
 
   async get(id: string): Promise<LoanRecord | null> {
-    const loans = await listLoans({ id });
+    const numericId = toNumericId(id);
+    if (!Number.isInteger(numericId) || numericId <= 0) return null;
+    const loans = await listLoans({ id: String(numericId) });
+    return loans[0] || null;
+  },
+
+  async findByCode(code: string): Promise<LoanRecord | null> {
+    const loans = await listLoans({ code });
     return loans[0] || null;
   },
 
@@ -90,6 +109,6 @@ export const loanApi = {
   },
 
   extractNumericId(loanRecordId: string): number {
-    return parseInt(loanRecordId.replace("LOAN-", ""), 10);
+    return toNumericId(loanRecordId);
   },
 };

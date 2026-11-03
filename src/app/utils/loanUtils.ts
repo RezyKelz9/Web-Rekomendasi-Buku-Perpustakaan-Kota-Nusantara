@@ -2,6 +2,7 @@ export type LoanStatus = "Menunggu" | "Dipinjam" | "Dikembalikan" | "Selesai" | 
 
 export interface LoanRecord {
   id: string;
+  transactionCode: string;
   userId: string;
   bookId: string;
   title: string;

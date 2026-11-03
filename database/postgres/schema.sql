@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS loans (
   fine NUMERIC(12, 2) NOT NULL DEFAULT 0,
   is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
   payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+  transaction_code VARCHAR(20) NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'Menunggu',
   CONSTRAINT loans_payment_status_check CHECK (payment_status IN ('unpaid', 'paid')),
   CONSTRAINT loans_status_check CHECK (status IN ('Menunggu', 'Dipinjam', 'Dikembalikan', 'Selesai', 'Ditolak'))
@@ -124,6 +125,7 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 CREATE INDEX IF NOT EXISTS idx_books_category_id ON books(category_id);
 CREATE INDEX IF NOT EXISTS idx_books_shelf_id ON books(shelf_id);
 CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_loans_transaction_code ON loans(transaction_code);
 CREATE INDEX IF NOT EXISTS idx_loans_user_id ON loans(user_id);
 CREATE INDEX IF NOT EXISTS idx_loans_book_id ON loans(book_id);
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);

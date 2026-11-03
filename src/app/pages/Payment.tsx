@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { CheckCircle, AlertCircle, ArrowLeft, Loader } from "lucide-react";
 import type { LoanRecord } from "../utils/loanUtils";
 import { loanApi } from "../services/loanApi";
+import { TransactionCode } from "../components/TransactionCode";
 
 export function Payment() {
   const { loanId } = useParams();
@@ -106,8 +107,8 @@ export function Payment() {
             <div className="p-6">
               <div className="bg-sky-50 rounded-2xl p-4 mb-6">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sky-500 text-sm">ID Peminjaman</span>
-                  <span className="text-sky-900 text-sm font-semibold">{loan.id}</span>
+                  <span className="text-sky-500 text-sm">Kode Transaksi</span>
+                  <TransactionCode code={loan.transactionCode} />
                 </div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sky-500 text-sm">Buku</span>

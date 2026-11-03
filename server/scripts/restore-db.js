@@ -17,6 +17,16 @@ const port = String(process.env.DB_PORT || 5432);
 const user = process.env.DB_USER || "postgres";
 const password = process.env.DB_PASSWORD || "";
 
+const localHosts = new Set(["127.0.0.1", "localhost", "::1"]);
+if (!localHosts.has(host) && !process.argv.includes("--force")) {
+  console.error(
+    `Restore dibatalkan: host "${host}" bukan database lokal. ` +
+      "Skrip ini memakai pg_restore --clean dan akan menghapus data target. " +
+      "Tambahkan --force hanya jika benar-benar yakin."
+  );
+  process.exit(1);
+}
+
 if (!/^[a-zA-Z0-9_]+$/.test(database)) {
   console.error("Nama database hanya boleh berisi huruf, angka, dan underscore.");
   process.exit(1);

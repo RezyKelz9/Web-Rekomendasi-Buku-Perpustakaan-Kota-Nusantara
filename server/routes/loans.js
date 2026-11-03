@@ -2,13 +2,13 @@ import { Router } from "express";
 import { pool, withTransaction } from "../db.js";
 import { authenticate, requireAdmin } from "../auth.js";
 import { asyncHandler, fail, handleDatabaseError, input, parseId, respond } from "../http.js";
-import { logActivity } from "../helpers.js";
+import { generateLoanCode, logActivity } from "../helpers.js";
 
 export const loansRouter = Router();
 
 const LOAN_SELECT = `
   SELECT l.id, l.user_id, l.book_id, l.borrowed_at, l.due_at, l.returned_at,
-         l.duration, l.fine, l.is_favorite, l.payment_status, l.status,
+         l.duration, l.fine, l.is_favorite, l.payment_status, l.transaction_code, l.status,
          b.title, b.author, b.cover,
          u.nama_lengkap AS user_name, u.jenis_anggota AS user_type
   FROM loans l
@@ -50,6 +50,7 @@ loansRouter.get(
     const requestedUserId = parseId(req.query.userId);
     const loanId = parseId(req.query.id);
     const status = req.query.status ? String(req.query.status) : null;
+    const code = req.query.code ? String(req.query.code).trim().toUpperCase() : null;
 
     let userId = requestedUserId;
     if (req.user.role !== "admin") {
@@ -72,6 +73,10 @@ loansRouter.get(
     if (loanId) {
       params.push(loanId);
       conditions.push(`l.id = $${params.length}`);
+    }
+    if (code) {
+      params.push(`${code}%`);
+      conditions.push(`l.transaction_code ILIKE $${params.length}`);
     }
 
     let sql = LOAN_SELECT;
@@ -97,43 +102,59 @@ loansRouter.post(
     if (!bookId) return fail(res, "Buku tidak valid.", 422);
 
     try {
-      const loan = await withTransaction(async (client) => {
-        const book = await client.query(
-          "SELECT id, title, stock FROM books WHERE id = $1 FOR UPDATE",
-          [bookId]
-        );
-        if (book.rowCount === 0) throw Object.assign(new Error("Buku tidak ditemukan."), { status: 404 });
+      let loan = null;
+      let lastError = null;
 
-        const active = await client.query(
-          `SELECT COUNT(*)::int AS total FROM loans
-           WHERE book_id = $1 AND status IN ('Menunggu', 'Dipinjam')`,
-          [bookId]
-        );
-        const available = Number(book.rows[0].stock) - Number(active.rows[0].total);
-        if (available < 1) throw Object.assign(new Error("Buku tidak tersedia."), { status: 422 });
+      for (let attempt = 0; attempt < 5 && !loan; attempt += 1) {
+        try {
+          loan = await withTransaction(async (client) => {
+            const book = await client.query(
+              "SELECT id, title, stock FROM books WHERE id = $1 FOR UPDATE",
+              [bookId]
+            );
+            if (book.rowCount === 0) throw Object.assign(new Error("Buku tidak ditemukan."), { status: 404 });
 
-        const duplicate = await client.query(
-          `SELECT id FROM loans
-           WHERE user_id = $1 AND book_id = $2 AND status IN ('Menunggu', 'Dipinjam')`,
-          [userId, bookId]
-        );
-        if (duplicate.rowCount > 0) {
-          throw Object.assign(new Error("Anda sudah meminjam buku ini."), { status: 422 });
+            const active = await client.query(
+              `SELECT COUNT(*)::int AS total FROM loans
+               WHERE book_id = $1 AND status IN ('Menunggu', 'Dipinjam')`,
+              [bookId]
+            );
+            const available = Number(book.rows[0].stock) - Number(active.rows[0].total);
+            if (available < 1) throw Object.assign(new Error("Buku tidak tersedia."), { status: 422 });
+
+            const duplicate = await client.query(
+              `SELECT id FROM loans
+               WHERE user_id = $1 AND book_id = $2 AND status IN ('Menunggu', 'Dipinjam')`,
+              [userId, bookId]
+            );
+            if (duplicate.rowCount > 0) {
+              throw Object.assign(new Error("Anda sudah meminjam buku ini."), { status: 422 });
+            }
+
+            const inserted = await client.query(
+              `INSERT INTO loans
+                 (user_id, book_id, borrowed_at, due_at, duration, fine, is_favorite,
+                  payment_status, status, transaction_code)
+               VALUES ($1, $2, NOW(), NOW() + make_interval(days => $3), $3, 0, $4, 'unpaid', 'Menunggu', $5)
+               RETURNING id`,
+              [userId, bookId, duration, Boolean(data.isFavorite), generateLoanCode()]
+            );
+
+            if (req.user.role === "admin" && userId !== req.user.id) {
+              await logActivity(client, req.user, "Peminjaman", "Tambah", `Membuat peminjaman buku "${book.rows[0].title}"`);
+            }
+            return fetchLoan(client, inserted.rows[0].id);
+          });
+        } catch (error) {
+          const isCodeCollision =
+            error?.code === "23505" && String(error?.constraint || "").includes("transaction_code");
+          if (!isCodeCollision) throw error;
+          lastError = error;
         }
+      }
 
-        const inserted = await client.query(
-          `INSERT INTO loans
-             (user_id, book_id, borrowed_at, due_at, duration, fine, is_favorite, payment_status, status)
-           VALUES ($1, $2, NOW(), NOW() + make_interval(days => $3), $3, 0, $4, 'unpaid', 'Menunggu')
-           RETURNING id`,
-          [userId, bookId, duration, Boolean(data.isFavorite)]
-        );
+      if (!loan) throw lastError ?? new Error("Gagal membuat kode transaksi unik.");
 
-        if (req.user.role === "admin" && userId !== req.user.id) {
-          await logActivity(client, req.user, "Peminjaman", "Tambah", `Membuat peminjaman buku "${book.rows[0].title}"`);
-        }
-        return fetchLoan(client, inserted.rows[0].id);
-      });
       respond(res, { success: true, data: loan, message: "Peminjaman berhasil dibuat." }, 201);
     } catch (error) {
       if (error.status) return fail(res, error.message, error.status);

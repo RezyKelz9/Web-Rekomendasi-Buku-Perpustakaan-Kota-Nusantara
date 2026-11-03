@@ -10,6 +10,25 @@ export function generateToken() {
   return randomBytes(32).toString("hex");
 }
 
+const LOAN_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+export function generateLoanCode(date = new Date()) {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(date)
+    .replace(/-/g, "");
+  const bytes = randomBytes(4);
+  let suffix = "";
+  for (const byte of bytes) {
+    suffix += LOAN_CODE_ALPHABET[byte % LOAN_CODE_ALPHABET.length];
+  }
+  return `PJM-${day}-${suffix}`;
+}
+
 export function memberPrefix(jenisAnggota, role) {
   if (role !== "member") {
     if (role === "admin") return "ADM";

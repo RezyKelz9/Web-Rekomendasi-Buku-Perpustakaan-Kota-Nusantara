@@ -13,7 +13,8 @@
     "api:dev": "node --watch server/index.js",
     "db:setup": "node server/scripts/setup-db.js",
     "db:seed": "node server/scripts/seed.ts",
-    "db:restore": "node server/scripts/restore-db.js"
+    "db:restore": "node server/scripts/restore-db.js",
+    "db:sync:neon": "node server/scripts/sync-to-neon.js"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

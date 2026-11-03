@@ -4,6 +4,7 @@ import { calculateFine, getOverdueDays, DEFAULT_SETTINGS } from "../../utils/loa
 import type { LoanRecord, LibrarySettings } from "../../utils/loanUtils";
 import { loanApi } from "../../services/loanApi";
 import { settingsApi } from "../../services/settingsApi";
+import { TransactionCode } from "../../components/TransactionCode";
 
 const formatDate = (isoStr?: string) => {
   if (!isoStr) return "-";
@@ -67,8 +68,11 @@ export function AdminLoans() {
   };
 
   const filteredLoans = loansWithFine.filter((loan) => {
-    const matchesSearch = loan.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          (loan.userName || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const keyword = searchTerm.trim().toLowerCase();
+    const matchesSearch = !keyword ||
+                          loan.title.toLowerCase().includes(keyword) ||
+                          (loan.userName || "").toLowerCase().includes(keyword) ||
+                          loan.transactionCode.toLowerCase().includes(keyword);
     const matchesStatus = filterStatus === "Semua" || loan.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -109,7 +113,7 @@ export function AdminLoans() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
             <input
               type="text"
-              placeholder="Cari nama peminjam atau buku..."
+              placeholder="Cari kode transaksi, nama peminjam, atau buku..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-white/10 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition"
@@ -139,6 +143,7 @@ export function AdminLoans() {
             <thead className="border-b border-white/10 text-slate-400 uppercase tracking-[0.1em] text-[11px] font-bold">
               <tr>
                 <th className="px-4 py-3">Peminjam</th>
+                <th className="px-4 py-3">Kode</th>
                 <th className="px-4 py-3">Buku</th>
                 <th className="px-4 py-3">Tanggal Pengajuan</th>
                 <th className="px-4 py-3">Jatuh Tempo</th>
@@ -155,6 +160,9 @@ export function AdminLoans() {
                   <td className="px-4 py-4">
                     <p className="font-semibold text-white">{loan.userName || "Anggota"}</p>
                     <p className="text-xs text-slate-400">{loan.userType || "Umum"}</p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <TransactionCode code={loan.transactionCode} tone="dark" />
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
@@ -233,7 +241,7 @@ export function AdminLoans() {
               ))}
               {filteredLoans.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
                     Tidak ada data peminjaman yang sesuai.
                   </td>
                 </tr>

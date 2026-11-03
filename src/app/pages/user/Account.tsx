@@ -23,6 +23,7 @@ import {
   EyeOff,
   X,
   CreditCard,
+  Search,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { formatLoanDate, getRemainingDays, calculateFine, getOverdueDays, DEFAULT_SETTINGS } from "../../utils/loanUtils";
@@ -31,6 +32,7 @@ import { loanApi } from "../../services/loanApi";
 import { ratingApi } from "../../services/ratingApi";
 import { settingsApi } from "../../services/settingsApi";
 import { RatingWidget } from "../../components/RatingWidget";
+import { TransactionCode } from "../../components/TransactionCode";
 
 const tabs = ["Profil", "Pinjaman Aktif", "Riwayat", "Pengaturan"];
 
@@ -45,6 +47,7 @@ export function Account() {
   const [loanHistory, setLoanHistory] = useState<LoanRecord[]>([]);
   const [settings, setSettings] = useState<LibrarySettings>(DEFAULT_SETTINGS);
   const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [historySearch, setHistorySearch] = useState("");
 
   // Ubah Kata Sandi state
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -114,6 +117,15 @@ export function Account() {
   const userInitial = user?.namaLengkap?.charAt(0).toUpperCase() ?? "?";
   const memberId = user?.memberCode || (user?.id ? `ID-${user.id.slice(-6).toUpperCase()}` : "—");
   const memberSince = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+
+  const keyword = historySearch.trim().toLowerCase();
+  const filteredHistory = keyword
+    ? loanHistory.filter((loan) =>
+        [loan.transactionCode, loan.title, loan.author]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(keyword))
+      )
+    : loanHistory;
 
   const totalFines = activeLoansData.reduce((acc, loan) => {
     if (loan.status === "Dipinjam" || loan.status === "Dikembalikan") {
@@ -290,6 +302,9 @@ export function Account() {
                         <div>
                           <p className="text-sky-900" style={{ fontWeight: 700 }}>{loan.title}</p>
                           <p className="text-sky-500 text-sm">{loan.author}</p>
+                          <div className="mt-1.5">
+                            <TransactionCode code={loan.transactionCode} />
+                          </div>
                         </div>
                         {loan.status === "Dikembalikan" ? (
                           <span className="text-xs px-2.5 py-1 rounded-full flex-shrink-0 bg-amber-100 text-amber-700" style={{ fontWeight: 500 }}>
@@ -386,14 +401,32 @@ export function Account() {
       {activeTab === "Riwayat" && (
         <div className="bg-white rounded-2xl border border-sky-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-sky-50">
-            <h3 className="text-sky-900" style={{ fontWeight: 700 }}>Riwayat Peminjaman</h3>
-            <p className="text-sky-500 text-sm mt-0.5">Total {loanHistory.filter(l => l.status !== "Ditolak").length} buku pernah dipinjam</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sky-900" style={{ fontWeight: 700 }}>Riwayat Peminjaman</h3>
+                <p className="text-sky-500 text-sm mt-0.5">
+                  Total {loanHistory.filter(l => l.status !== "Ditolak").length} buku pernah dipinjam
+                </p>
+              </div>
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" size={15} />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Cari kode transaksi, judul, penulis..."
+                  className="w-full pl-9 pr-3 py-2 bg-sky-50 border border-sky-200 rounded-xl text-sm text-sky-900 placeholder-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                />
+              </div>
+            </div>
           </div>
           <div className="divide-y divide-sky-50">
             {loanHistory.length === 0 ? (
               <div className="p-6 text-center text-sky-600">Belum ada riwayat peminjaman.</div>
+            ) : filteredHistory.length === 0 ? (
+              <div className="p-6 text-center text-sky-600">Tidak ada riwayat yang cocok dengan pencarian.</div>
             ) : (
-              loanHistory.map((loan) => (
+              filteredHistory.map((loan) => (
                 <div key={loan.id} className="flex items-center gap-4 p-4">
                   {loan.status === "Ditolak" ? (
                     <div className="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -407,6 +440,9 @@ export function Account() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sky-900 text-sm truncate" style={{ fontWeight: 600 }}>{loan.title}</p>
                     <p className="text-sky-500 text-xs">{loan.author}</p>
+                    <div className="mt-1">
+                      <TransactionCode code={loan.transactionCode} />
+                    </div>
                     {loan.status === "Ditolak" ? (
                       <span className="inline-flex items-center gap-1 text-rose-500 text-xs mt-0.5 font-semibold">
                         <XCircle size={12} /> Ditolak
